@@ -1,0 +1,18 @@
+# 运行时与凭据文件（工程若进 git，此清单缺一不可）
+api_token.txt
+runtime.json
+kill_audit.jsonl*
+instance.lock
+# M2（T-PORT-003）：用户数据文件——unknown.json 存脱敏后命令行（脱敏有漏网风险）、
+# port_map.json 存本机端口归属。都是本机数据，不要提交。
+unknown.json
+port_map.json
+__pycache__/
+*.pyc
+
+# 编辑过程备份件与运行残留（不进仓库）
+*.bak-*
+pcon-*.stale
+pcon-*.tmp
+# 未来薄壳 npm 依赖
+node_modules/

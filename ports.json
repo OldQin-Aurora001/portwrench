@@ -1,0 +1,2210 @@
+{
+  "version": "1.0",
+  "updated": "2026-11-01T07:00:00+08:00",
+  "source": "微软官方KB832017 + 综合整理",
+  "description": "Windows及国内环境常用软件端口对照表 - 供端口管家网页小工具使用",
+  "usage": {
+    "program": "filter ports by port number, protocol, category",
+    "ai": "直接读取 ports 数组，按 category 分组或按 port 查询",
+    "note": "同一端口可能对应多个服务（如5432同时是PostgreSQL和GaussDB），查询时返回所有匹配项"
+  },
+  "categories": [
+    {
+      "name": "Windows系统服务",
+      "count": 12
+    },
+    {
+      "name": "网络基础协议",
+      "count": 23
+    },
+    {
+      "name": "数据库-国际",
+      "count": 8
+    },
+    {
+      "name": "数据库-国产",
+      "count": 10
+    },
+    {
+      "name": "中间件-国产",
+      "count": 16
+    },
+    {
+      "name": "国内常用软件",
+      "count": 21
+    },
+    {
+      "name": "Web中间件",
+      "count": 5
+    },
+    {
+      "name": "开发常用端口",
+      "count": 13
+    }
+  ],
+  "ports": [
+    {
+      "port": 135,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "RPC",
+      "name": "远程过程调用",
+      "description": "Windows RPC服务",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "rpc",
+        "system"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 137,
+      "protocol": "UDP",
+      "category": "Windows系统服务",
+      "service": "NetBIOS-NS",
+      "name": "NetBIOS名称解析",
+      "description": "名称注册与解析",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "netbios",
+        "name"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 138,
+      "protocol": "UDP",
+      "category": "Windows系统服务",
+      "service": "NetBIOS-DGM",
+      "name": "NetBIOS数据报",
+      "description": "数据报服务",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "netbios"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 139,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "NetBIOS-SSN",
+      "name": "NetBIOS会话服务",
+      "description": "NetBIOS会话（文件共享）",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "netbios",
+        "smb"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 445,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "SMB/CIFS",
+      "name": "Windows文件共享",
+      "description": "SMB协议文件共享（CIFS）",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "smb",
+        "cifs",
+        "file-share"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 3389,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "RDP",
+      "name": "远程桌面",
+      "description": "Windows远程桌面协议",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "rdp",
+        "remote-desktop"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5985,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "WinRM-HTTP",
+      "name": "Windows远程管理(HTTP)",
+      "description": "Windows远程管理服务",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "winrm",
+        "remote-mgmt"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5986,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "WinRM-HTTPS",
+      "name": "Windows远程管理(HTTPS)",
+      "description": "Windows远程管理服务(加密)",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "winrm",
+        "remote-mgmt",
+        "https"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 1900,
+      "protocol": "UDP",
+      "category": "Windows系统服务",
+      "service": "SSDP",
+      "name": "简单服务发现协议",
+      "description": "设备发现",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "ssdp",
+        "discovery"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 2869,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "SSDP-Event",
+      "name": "SSDP事件通知",
+      "description": "SSDP旧版事件通知",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "ssdp",
+        "event"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 515,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "LPD",
+      "name": "TCP/IP打印服务",
+      "description": "行式打印机后台程序",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "print",
+        "lpd"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 23,
+      "protocol": "TCP",
+      "category": "Windows系统服务",
+      "service": "Telnet",
+      "name": "远程终端",
+      "description": "远程终端（明文，不安全，不推荐）",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "telnet",
+        "remote",
+        "insecure"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 20,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "FTP-Data",
+      "name": "FTP数据传输",
+      "description": "FTP文件传输数据通道",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "ftp",
+        "file-transfer"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 21,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "FTP-Control",
+      "name": "FTP控制通道",
+      "description": "FTP文件传输控制通道",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "ftp",
+        "file-transfer"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 22,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "SSH/SFTP",
+      "name": "安全远程登录",
+      "description": "SSH安全远程登录与文件传输",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "ssh",
+        "sftp",
+        "remote",
+        "secure"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 25,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "SMTP",
+      "name": "简单邮件传输协议",
+      "description": "邮件发送",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "smtp",
+        "mail",
+        "send"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 53,
+      "protocol": "TCP/UDP",
+      "category": "网络基础协议",
+      "service": "DNS",
+      "name": "域名系统",
+      "description": "域名解析为IP地址",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dns",
+        "resolve"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 67,
+      "protocol": "UDP",
+      "category": "网络基础协议",
+      "service": "DHCP-Server",
+      "name": "动态主机配置(服务端)",
+      "description": "DHCP服务端，自动分配IP",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dhcp",
+        "ip-assign"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 68,
+      "protocol": "UDP",
+      "category": "网络基础协议",
+      "service": "DHCP-Client",
+      "name": "动态主机配置(客户端)",
+      "description": "DHCP客户端，获取IP",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dhcp",
+        "ip-assign"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 69,
+      "protocol": "UDP",
+      "category": "网络基础协议",
+      "service": "TFTP",
+      "name": "简单文件传输协议",
+      "description": "简单文件传输（无认证）",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "tftp",
+        "file-transfer"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 80,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "HTTP",
+      "name": "超文本传输协议",
+      "description": "网页明文访问",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "http",
+        "web"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 110,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "POP3",
+      "name": "邮局协议v3",
+      "description": "邮件接收",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "pop3",
+        "mail",
+        "receive"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 123,
+      "protocol": "UDP",
+      "category": "网络基础协议",
+      "service": "NTP",
+      "name": "网络时间协议",
+      "description": "网络时间同步",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "ntp",
+        "time"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 143,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "IMAP",
+      "name": "互联网邮件访问协议",
+      "description": "邮件访问与存储",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "imap",
+        "mail"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 161,
+      "protocol": "UDP",
+      "category": "网络基础协议",
+      "service": "SNMP",
+      "name": "简单网络管理协议",
+      "description": "网络管理",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "snmp",
+        "monitor"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 162,
+      "protocol": "UDP",
+      "category": "网络基础协议",
+      "service": "SNMP-Trap",
+      "name": "SNMP告警通知",
+      "description": "SNMP Trap告警",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "snmp",
+        "alert"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 443,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "HTTPS",
+      "name": "超文本传输协议(加密)",
+      "description": "网页加密访问",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "https",
+        "web",
+        "ssl",
+        "secure"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 465,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "SMTPS",
+      "name": "SMTP over TLS",
+      "description": "SMTP加密发信",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "smtp",
+        "mail",
+        "ssl",
+        "secure"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 514,
+      "protocol": "UDP",
+      "category": "网络基础协议",
+      "service": "Syslog",
+      "name": "系统日志",
+      "description": "系统日志服务",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "syslog",
+        "log"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 587,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "SMTP-Submission",
+      "name": "邮件提交",
+      "description": "SMTP邮件提交（新标准）",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "smtp",
+        "mail",
+        "submit"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 636,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "LDAPS",
+      "name": "LDAP over TLS",
+      "description": "LDAP加密目录服务",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "ldap",
+        "ssl",
+        "directory"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 993,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "IMAPS",
+      "name": "IMAP over TLS",
+      "description": "IMAP加密邮件访问",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "imap",
+        "ssl",
+        "mail",
+        "secure"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 995,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "POP3S",
+      "name": "POP3 over TLS",
+      "description": "POP3加密邮件接收",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "pop3",
+        "ssl",
+        "mail",
+        "secure"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 989,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "FTPS-Data",
+      "name": "FTPS数据传输",
+      "description": "FTP over TLS数据通道",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "ftps",
+        "ssl",
+        "file-transfer"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 990,
+      "protocol": "TCP",
+      "category": "网络基础协议",
+      "service": "FTPS-Control",
+      "name": "FTPS控制通道",
+      "description": "FTP over TLS控制通道",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "ftps",
+        "ssl",
+        "file-transfer"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 1433,
+      "protocol": "TCP",
+      "category": "数据库-国际",
+      "service": "SQL Server",
+      "name": "Microsoft SQL Server",
+      "description": "SQL Server数据库默认端口",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "sqlserver",
+        "mssql"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 1521,
+      "protocol": "TCP",
+      "category": "数据库-国际",
+      "service": "Oracle",
+      "name": "Oracle数据库",
+      "description": "Oracle数据库默认端口",
+      "vendor": "Oracle",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "oracle"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 3306,
+      "protocol": "TCP",
+      "category": "数据库-国际",
+      "service": "MySQL",
+      "name": "MySQL数据库",
+      "description": "MySQL数据库默认端口",
+      "vendor": "Oracle/MySQL",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "mysql"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 33060,
+      "protocol": "TCP",
+      "category": "数据库-国际",
+      "service": "MySQL-X",
+      "name": "MySQL X协议",
+      "description": "MySQL 8.0默认启用X协议",
+      "vendor": "MySQL",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "mysql",
+        "x-protocol"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5432,
+      "protocol": "TCP",
+      "category": "数据库-国际",
+      "service": "PostgreSQL",
+      "name": "PostgreSQL数据库",
+      "description": "PostgreSQL数据库默认端口",
+      "vendor": "PostgreSQL",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "postgresql",
+        "postgres"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6379,
+      "protocol": "TCP",
+      "category": "数据库-国际",
+      "service": "Redis",
+      "name": "Redis缓存",
+      "description": "Redis内存数据库",
+      "vendor": "Redis",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "redis",
+        "cache",
+        "nosql"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 27017,
+      "protocol": "TCP",
+      "category": "数据库-国际",
+      "service": "MongoDB",
+      "name": "MongoDB数据库",
+      "description": "MongoDB文档数据库",
+      "vendor": "MongoDB",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "mongodb",
+        "nosql"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 11211,
+      "protocol": "TCP",
+      "category": "数据库-国际",
+      "service": "Memcached",
+      "name": "Memcached缓存",
+      "description": "Memcached内存缓存",
+      "vendor": "Memcached",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "cache",
+        "memcached"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5236,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "DM",
+      "name": "达梦数据库",
+      "description": "达梦DM7/DM8/DM9，Oracle风格SQL",
+      "vendor": "武汉达梦",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "dameng",
+        "dm",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 54321,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "KingbaseES",
+      "name": "人大金仓数据库",
+      "description": "人大金仓KingbaseES V8/V9，兼容PostgreSQL",
+      "vendor": "北京人大金仓",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "kingbase",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5432,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "GaussDB",
+      "name": "华为高斯数据库",
+      "description": "GaussDB/openGauss，走PostgreSQL协议",
+      "vendor": "华为",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "gaussdb",
+        "opengauss",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 2881,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "OceanBase",
+      "name": "OceanBase直连",
+      "description": "OceanBase数据库直连端口",
+      "vendor": "蚂蚁集团",
+      "os": [
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "oceanbase",
+        "distributed",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 2883,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "OceanBase-OBProxy",
+      "name": "OceanBase代理层",
+      "description": "OceanBase OBProxy代理入口",
+      "vendor": "蚂蚁集团",
+      "os": [
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "oceanbase",
+        "proxy",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 4000,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "TiDB",
+      "name": "TiDB分布式数据库",
+      "description": "TiDB分布式HTAP数据库",
+      "vendor": "PingCAP",
+      "os": [
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "tidb",
+        "distributed",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 3306,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "PolarDB",
+      "name": "阿里云PolarDB",
+      "description": "PolarDB云原生数据库，兼容MySQL",
+      "vendor": "阿里云",
+      "os": [
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "polardb",
+        "cloud"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5432,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "Vastbase",
+      "name": "海量数据库",
+      "description": "Vastbase海量数据库，兼容PostgreSQL",
+      "vendor": "海量数据",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "vastbase",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5866,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "HighGo",
+      "name": "瀚高数据库",
+      "description": "HighGo瀚高数据库，兼容PostgreSQL",
+      "vendor": "瀚高",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "highgo",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 3306,
+      "protocol": "TCP",
+      "category": "数据库-国产",
+      "service": "GoldenDB",
+      "name": "中兴GoldenDB",
+      "description": "GoldenDB分布式数据库，兼容MySQL",
+      "vendor": "中兴",
+      "os": [
+        "Linux"
+      ],
+      "tags": [
+        "database",
+        "goldendb",
+        "distributed",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6848,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "Apusic-Admin",
+      "name": "金蝶Apusic管控端口",
+      "description": "金蝶天燕Apusic应用服务器管控端口",
+      "vendor": "金蝶天燕",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "apusic",
+        "j2ee",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6888,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "Apusic-HTTP",
+      "name": "金蝶Apusic HTTP",
+      "description": "金蝶Apusic HTTP服务端口",
+      "vendor": "金蝶天燕",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "apusic",
+        "http",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6887,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "Apusic-HTTPS",
+      "name": "金蝶Apusic HTTPS",
+      "description": "金蝶Apusic HTTPS(SSL)端口",
+      "vendor": "金蝶天燕",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "apusic",
+        "https",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6837,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "Apusic-IIOP",
+      "name": "金蝶Apusic IIOP",
+      "description": "金蝶Apusic IIOP端口",
+      "vendor": "金蝶天燕",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "apusic",
+        "iiop",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6876,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "Apusic-JMS",
+      "name": "金蝶Apusic JMS",
+      "description": "金蝶Apusic JMS消息端口",
+      "vendor": "金蝶天燕",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "apusic",
+        "jms",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6886,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "Apusic-JMX",
+      "name": "金蝶Apusic JMX",
+      "description": "金蝶Apusic JMX管理端口",
+      "vendor": "金蝶天燕",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "apusic",
+        "jmx",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6866,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "Apusic-OSGI",
+      "name": "金蝶Apusic OSGI Shell",
+      "description": "金蝶Apusic OSGI远程Shell",
+      "vendor": "金蝶天燕",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "apusic",
+        "osgi",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8000,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "Apusic-Debug",
+      "name": "金蝶Apusic Java调试",
+      "description": "金蝶Apusic Java Debugger端口",
+      "vendor": "金蝶天燕",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "apusic",
+        "debug",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 9060,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "TongWeb-Console",
+      "name": "东方通管理控制台",
+      "description": "东方通TongWeb管理控制台 http://IP:9060/console/rest",
+      "vendor": "东方通",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "tongweb",
+        "j2ee",
+        "信创",
+        "admin"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8060,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "InforSuite-Admin",
+      "name": "中创InforSuite管理",
+      "description": "中创应用服务器Admin端口",
+      "vendor": "中创软件",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "inforsuite",
+        "j2ee",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 7676,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "InforSuite-JMS",
+      "name": "中创InforSuite JMS",
+      "description": "中创应用服务器JMS消息端口",
+      "vendor": "中创软件",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "inforsuite",
+        "jms",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 3700,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "InforSuite-IIOP",
+      "name": "中创InforSuite IIOP",
+      "description": "中创应用服务器IIOP端口",
+      "vendor": "中创软件",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "inforsuite",
+        "iiop",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8181,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "InforSuite-HTTPS",
+      "name": "中创InforSuite HTTPS",
+      "description": "中创应用服务器HTTP_SSL端口",
+      "vendor": "中创软件",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "inforsuite",
+        "https",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8686,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "InforSuite-JMX",
+      "name": "中创InforSuite JMX",
+      "description": "中创应用服务器JMX管理端口",
+      "vendor": "中创软件",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "inforsuite",
+        "jmx",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 6666,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "InforSuite-OSGI",
+      "name": "中创InforSuite OSGI",
+      "description": "中创应用服务器OSGI Shell端口",
+      "vendor": "中创软件",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "inforsuite",
+        "osgi",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 9009,
+      "protocol": "TCP",
+      "category": "中间件-国产",
+      "service": "InforSuite-Debug",
+      "name": "中创InforSuite Java调试",
+      "description": "中创应用服务器Java Debugger端口",
+      "vendor": "中创软件",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "middleware",
+        "inforsuite",
+        "debug",
+        "信创"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 80,
+      "protocol": "TCP/UDP",
+      "category": "国内常用软件",
+      "service": "WeChat",
+      "name": "微信",
+      "description": "微信服务端HTTP端口；服务端通用端口，非本机进程身份",
+      "vendor": "腾讯",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "wechat",
+        "社交",
+        "腾讯"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 443,
+      "protocol": "TCP/UDP",
+      "category": "国内常用软件",
+      "service": "WeChat",
+      "name": "微信",
+      "description": "微信服务端HTTPS端口；服务端通用端口，非本机进程身份",
+      "vendor": "腾讯",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "wechat",
+        "社交",
+        "腾讯"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8080,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "WeChat",
+      "name": "微信",
+      "description": "微信部分地区辅助通信端口；服务端通用端口，非本机进程身份",
+      "vendor": "腾讯",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "wechat",
+        "社交",
+        "腾讯"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 443,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "DingTalk",
+      "name": "钉钉",
+      "description": "钉钉服务端HTTPS端口；服务端通用端口，非本机进程身份",
+      "vendor": "阿里",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dingtalk",
+        "办公",
+        "阿里"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5222,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "DingTalk",
+      "name": "钉钉长连接",
+      "description": "钉钉长连接特殊端口",
+      "vendor": "阿里",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dingtalk",
+        "办公",
+        "长连接",
+        "阿里"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 443,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "WeCom",
+      "name": "企业微信",
+      "description": "企业微信服务端HTTPS端口；服务端通用端口，非本机进程身份",
+      "vendor": "腾讯",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "wecom",
+        "企业微信",
+        "办公",
+        "腾讯"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8443,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "WeCom",
+      "name": "企业微信备用",
+      "description": "企业微信备用端口",
+      "vendor": "腾讯",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "wecom",
+        "企业微信",
+        "办公",
+        "腾讯"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 443,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "Feishu",
+      "name": "飞书",
+      "description": "飞书服务端HTTPS端口；服务端通用端口，非本机进程身份",
+      "vendor": "字节跳动",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "feishu",
+        "lark",
+        "办公",
+        "字节"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8080,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "WeChatMP",
+      "name": "微信公众号回调",
+      "description": "微信公众号本地回调端口，需转发至80/443；服务端通用端口，非本机进程身份",
+      "vendor": "腾讯",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "wechatmp",
+        "公众号",
+        "开发",
+        "腾讯"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 443,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "AliyunConsole",
+      "name": "阿里云控制台",
+      "description": "阿里云控制台Web端口；服务端通用端口，非本机进程身份",
+      "vendor": "阿里云",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "aliyun",
+        "cloud",
+        "控制台"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 443,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "TencentCloud",
+      "name": "腾讯云控制台",
+      "description": "腾讯云控制台Web端口；服务端通用端口，非本机进程身份",
+      "vendor": "腾讯云",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "tencentcloud",
+        "cloud",
+        "控制台"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 1433,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "ERP-SQLServer",
+      "name": "金蝶/用友ERP",
+      "description": "金蝶/用友ERP后端SQL Server端口",
+      "vendor": "金蝶/用友",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "erp",
+        "金蝶",
+        "用友",
+        "sqlserver"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 3306,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "ERP-MySQL",
+      "name": "金蝶/用友ERP",
+      "description": "金蝶/用友ERP后端MySQL端口",
+      "vendor": "金蝶/用友",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "erp",
+        "金蝶",
+        "用友",
+        "mysql"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 80,
+      "protocol": "TCP",
+      "category": "Web中间件",
+      "service": "Apache/Nginx/IIS",
+      "name": "Web服务器",
+      "description": "Apache/Nginx/IIS默认HTTP端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "web",
+        "http",
+        "server"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8080,
+      "protocol": "TCP",
+      "category": "Web中间件",
+      "service": "Tomcat/JBoss",
+      "name": "Java Web容器",
+      "description": "Tomcat/JBoss备用HTTP端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "web",
+        "tomcat",
+        "jboss",
+        "java"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 7001,
+      "protocol": "TCP",
+      "category": "Web中间件",
+      "service": "WebLogic",
+      "name": "WebLogic",
+      "description": "Oracle WebLogic默认端口",
+      "vendor": "Oracle",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "web",
+        "weblogic",
+        "java"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8000,
+      "protocol": "TCP",
+      "category": "Web中间件",
+      "service": "Alt-HTTP",
+      "name": "备用HTTP端口",
+      "description": "常见备用HTTP服务端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "web",
+        "http",
+        "alt"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 4848,
+      "protocol": "TCP",
+      "category": "Web中间件",
+      "service": "GlassFish-Admin",
+      "name": "GlassFish管理",
+      "description": "GlassFish管理控制台端口",
+      "vendor": "Oracle",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "web",
+        "glassfish",
+        "admin",
+        "java"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 3000,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "DevServer",
+      "name": "前端开发服务器",
+      "description": "React/Node dev server常用",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "frontend",
+        "react",
+        "node"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 4000,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "DevServer",
+      "name": "开发服务器",
+      "description": "各种dev server常用端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "server"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 5000,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "Flask",
+      "name": "通用 HTTP 备用 / Flask 开发常用",
+      "description": "通用 HTTP 备用端口；Flask 开发服务器默认端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "python",
+        "flask"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8000,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "Django",
+      "name": "Python开发服务器",
+      "description": "Django/Python dev server默认端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "python",
+        "django"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8080,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "Alt-HTTP",
+      "name": "备用Web端口",
+      "description": "常用作Web服务备用端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "web",
+        "alt"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 8443,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "Alt-HTTPS",
+      "name": "备用HTTPS端口",
+      "description": "HTTPS备用端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "https",
+        "alt",
+        "ssl"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 9000,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "AdminPanel",
+      "name": "管理面板",
+      "description": "各种服务/管理面板常用端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "admin",
+        "panel"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 9200,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "Elasticsearch",
+      "name": "Elasticsearch HTTP",
+      "description": "Elasticsearch HTTP接口",
+      "vendor": "Elastic",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "elasticsearch",
+        "search"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 9300,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "Elasticsearch",
+      "name": "Elasticsearch集群",
+      "description": "Elasticsearch节点间通信",
+      "vendor": "Elastic",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "elasticsearch",
+        "cluster"
+      ],
+      "generic": true,
+      "scope": "general"
+    },
+    {
+      "port": 11434,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "Ollama",
+      "name": "Ollama本地AI",
+      "description": "Ollama本地AI模型服务默认端口",
+      "vendor": "Ollama",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "ai",
+        "ollama",
+        "llm"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 4709,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "WPSCloud",
+      "name": "WPS云服务",
+      "description": "WPS云服务同步端口",
+      "vendor": "金山WPS",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "wps",
+        "cloud",
+        "办公",
+        "金山"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 8011,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "WeChat-Client",
+      "name": "微信客户端",
+      "description": "微信PC客户端本地监听端口",
+      "vendor": "腾讯",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "wechat",
+        "客户端",
+        "腾讯"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 9010,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "lghub-agent",
+      "name": "lghub代理",
+      "description": "lghub代理服务端口",
+      "vendor": "lghub",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "lghub",
+        "agent"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 9128,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "Quark",
+      "name": "夸克浏览器",
+      "description": "夸克浏览器服务端口",
+      "vendor": "夸克",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "quark",
+        "browser",
+        "浏览器"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 9180,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "lghub-updater",
+      "name": "lghub更新",
+      "description": "lghub更新服务端口",
+      "vendor": "lghub",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "lghub",
+        "updater"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 3092,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "NodeDev",
+      "name": "Node开发服务",
+      "description": "Node.js开发服务端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "node",
+        "server"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 8899,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "NodeDev",
+      "name": "Node开发服务",
+      "description": "Node.js开发服务端口",
+      "vendor": "",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "node",
+        "server"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 4280,
+      "protocol": "TCP",
+      "category": "开发常用端口",
+      "service": "OpenCode",
+      "name": "OpenCode",
+      "description": "OpenCode开发工具端口",
+      "vendor": "OpenCode",
+      "os": [
+        "Windows",
+        "Linux"
+      ],
+      "tags": [
+        "dev",
+        "opencode",
+        "ai"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 42050,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "OneDrive",
+      "name": "OneDrive同步",
+      "description": "OneDrive同步服务端口",
+      "vendor": "Microsoft",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "onedrive",
+        "cloud",
+        "sync"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 49853,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "Doubao",
+      "name": "豆包AI",
+      "description": "豆包AI本地服务端口",
+      "vendor": "字节跳动",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "doubao",
+        "ai",
+        "字节"
+      ],
+      "generic": false,
+      "scope": "local"
+    },
+    {
+      "port": 53234,
+      "protocol": "TCP",
+      "category": "国内常用软件",
+      "service": "Doubao",
+      "name": "豆包AI",
+      "description": "豆包AI本地服务端口",
+      "vendor": "字节跳动",
+      "os": [
+        "Windows"
+      ],
+      "tags": [
+        "doubao",
+        "ai",
+        "字节"
+      ],
+      "generic": false,
+      "scope": "local"
+    }
+  ],
+  "dynamicRanges": [
+    {
+      "range": "49152-65535",
+      "os": "Windows Vista及以上/Server 2008+",
+      "description": "客户端动态端口范围"
+    },
+    {
+      "range": "1025-5000",
+      "os": "Windows XP/Server 2003",
+      "description": "客户端动态端口范围"
+    }
+  ]
+}

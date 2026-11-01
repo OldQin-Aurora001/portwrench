@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>PortWrench 端口扳手</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", sans-serif;
+    margin: 0; color: #e2e8f0; background: #0b1020;
+    background-image:
+      radial-gradient(900px 600px at 12% -8%, rgba(124,58,237,.28), transparent 60%),
+      radial-gradient(1000px 700px at 105% 12%, rgba(34,211,238,.16), transparent 60%),
+      radial-gradient(800px 600px at 50% 115%, rgba(59,130,246,.14), transparent 65%);
+    background-attachment: fixed;
+  }
+  .mono { font-family: "Cascadia Code", Consolas, monospace; }
+
+  /* ---- 玻璃面板通用 ---- */
+  header, #statusbar, .card, .dialog {
+    background: rgba(15,23,42,.55);
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid rgba(148,163,184,.16);
+  }
+
+  header {
+    margin: 14px 16px 0; border-radius: 14px; padding: 12px 18px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    box-shadow: 0 8px 32px rgba(2,6,23,.45);
+  }
+  header h1 {
+    font-size: 18px; margin: 0; letter-spacing: .5px;
+    background: linear-gradient(90deg, #67e8f9, #a78bfa);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  header .addr { font-family: "Cascadia Code", Consolas, monospace; font-size: 13px; color: #94a3b8; }
+  header .spacer { flex: 1; }
+  header button {
+    background: rgba(148,163,184,.12); color: #e2e8f0;
+    border: 1px solid rgba(148,163,184,.25); border-radius: 8px; padding: 6px 14px; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  header button:hover { background: rgba(148,163,184,.22); border-color: rgba(148,163,184,.45); }
+
+  #statusbar {
+    margin: 10px 16px 0; border-radius: 12px; padding: 8px 16px; font-size: 13px;
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap; color: #cbd5e1;
+  }
+  #statusbar .warn { color: #fbbf24; }
+  #statusbar .err { color: #f87171; font-weight: 600; }
+
+  main { padding: 14px 16px 40px; }
+  .filters { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .filters button {
+    border: 1px solid rgba(148,163,184,.25); background: rgba(15,23,42,.45);
+    color: #cbd5e1; border-radius: 999px; padding: 5px 14px; cursor: pointer; font-size: 13px;
+    transition: all .15s;
+  }
+  .filters button:hover { border-color: rgba(148,163,184,.5); color: #e2e8f0; }
+  .filters button.on {
+    background: linear-gradient(90deg, rgba(103,232,249,.22), rgba(167,139,250,.28));
+    color: #fff; border-color: rgba(167,139,250,.55);
+  }
+  .filters .count { font-size: 13px; color: #94a3b8; margin-left: 6px; }
+
+  table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    background: rgba(15,23,42,.5);
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid rgba(148,163,184,.16);
+    border-radius: 14px; overflow: hidden;
+    box-shadow: 0 8px 32px rgba(2,6,23,.45);
+  }
+  th, td { padding: 9px 12px; border-bottom: 1px solid rgba(148,163,184,.10); font-size: 13px; text-align: left; vertical-align: top; }
+  th { background: rgba(148,163,184,.08); font-weight: 600; white-space: nowrap; color: #cbd5e1; }
+  td.mono, .mono { font-family: "Cascadia Code", Consolas, monospace; }
+  tr:hover td { background: rgba(148,163,184,.07); }
+  tr:last-child td { border-bottom: none; }
+
+  /* ---- 级别徽章：四色双通道（深底版，dot+文字不变） ---- */
+  .lvl { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; border: 1px solid transparent; }
+  .lvl.system { background: rgba(248,113,113,.14); color: #fca5a5; border-color: rgba(248,113,113,.35); }
+  .lvl.other  { background: rgba(251,191,36,.13); color: #fcd34d; border-color: rgba(251,191,36,.35); }
+  .lvl.self   { background: rgba(74,222,128,.13); color: #86efac; border-color: rgba(74,222,128,.35); }
+  .lvl.unknown{ background: rgba(148,163,184,.12); color: #cbd5e1; border-color: rgba(148,163,184,.3); }
+
+  .tag { display: inline-block; font-size: 11px; padding: 0 7px; border-radius: 999px; margin-left: 5px; background: rgba(129,140,248,.15); color: #a5b4fc; border: 1px solid rgba(129,140,248,.3); }
+  .tag.stale { background: rgba(251,146,60,.13); color: #fdba74; border-color: rgba(251,146,60,.3); }
+  .protected-reason { font-size: 11px; color: #fca5a5; margin-top: 2px; }
+
+  .rowbtns button {
+    margin-right: 6px; padding: 4px 12px; border-radius: 8px; font-size: 12px; cursor: pointer;
+    border: 1px solid rgba(148,163,184,.25); background: rgba(148,163,184,.08); color: #e2e8f0;
+    transition: all .15s;
+  }
+  .rowbtns button:hover { background: rgba(148,163,184,.18); }
+  .rowbtns button.danger { color: #fca5a5; border-color: rgba(248,113,113,.4); }
+  .rowbtns button.danger:hover { background: rgba(248,113,113,.14); }
+  .rowbtns button:disabled { opacity: .4; cursor: not-allowed; }
+
+  tr.detail td { background: rgba(15,23,42,.65); font-size: 12px; }
+  .detail pre { margin: 4px 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #cbd5e1; }
+
+  .card { border-radius: 14px; padding: 12px 16px; margin-top: 14px; box-shadow: 0 8px 32px rgba(2,6,23,.45); }
+  .card h3 { margin: 0 0 8px; font-size: 14px; color: #e2e8f0; }
+  .card .kv { font-size: 12px; color: #94a3b8; line-height: 1.8; }
+
+  .dialog-back { position: fixed; inset: 0; background: rgba(4,8,20,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .dialog { border-radius: 16px; padding: 20px 22px; width: min(500px, 92vw); box-shadow: 0 24px 64px rgba(2,6,23,.6); }
+  .dialog h3 { margin: 0 0 10px; font-size: 15px; }
+  .dialog .kv { font-size: 13px; line-height: 1.8; color: #cbd5e1; }
+  .dialog .note { color: #fbbf24; font-size: 12px; margin-top: 8px; }
+  .dialog .danger-note { color: #f87171; }
+  .dialog .btns { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; }
+  .dialog .btns button { padding: 7px 16px; border-radius: 8px; border: 1px solid rgba(148,163,184,.3); background: rgba(148,163,184,.1); color: #e2e8f0; cursor: pointer; transition: all .15s; }
+  .dialog .btns button:hover { background: rgba(148,163,184,.2); }
+  .dialog .btns button.primary { background: linear-gradient(90deg, #0891b2, #7c3aed); border-color: transparent; color: #fff; }
+  .dialog .btns button.primary:hover { filter: brightness(1.15); }
+  .dialog .btns button.confirm-kill { background: linear-gradient(90deg, #dc2626, #b91c1c); border-color: transparent; color: #fff; }
+  .dialog .btns button.confirm-kill:hover { filter: brightness(1.15); }
+  .dialog input[type=text] { width: 100%; padding: 7px 10px; border: 1px solid rgba(148,163,184,.3); border-radius: 8px; margin-top: 4px; background: rgba(2,6,23,.5); color: #e2e8f0; }
+  .dialog select { padding: 6px; border: 1px solid rgba(148,163,184,.3); border-radius: 8px; margin-top: 4px; background: rgba(2,6,23,.5); color: #e2e8f0; }
+
+  .toast { position: fixed; right: 18px; bottom: 18px; background: rgba(15,23,42,.85); backdrop-filter: blur(12px); color: #e2e8f0; padding: 11px 18px; border-radius: 12px; font-size: 13px; z-index: 60; max-width: 60vw; border: 1px solid rgba(148,163,184,.2); box-shadow: 0 12px 40px rgba(2,6,23,.5); }
+  .toast.err { background: rgba(153,27,27,.85); border-color: rgba(248,113,113,.4); color: #fecaca; }
+
+  input.inline-name { width: 110px; padding: 3px 8px; border: 1px solid rgba(103,232,249,.45); border-radius: 6px; font-size: 12px; background: rgba(2,6,23,.5); color: #e2e8f0; }
+  select.inline-level { font-size: 12px; padding: 3px; background: rgba(2,6,23,.5); color: #e2e8f0; border: 1px solid rgba(148,163,184,.3); border-radius: 6px; }
+  th[data-k] { cursor: pointer; user-select: none; }
+  th[data-k]:hover { background: rgba(148,163,184,.14); }
+  th .arr { opacity: .55; margin-left: 4px; font-size: 10px; }
+  th.sorted { color: #67e8f9; }
+  th.sorted .arr { opacity: 1; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ PortWrench 端口扳手</h1>
+  <span class="addr" id="addr"></span>
+  <span class="spacer"></span>
+  <span id="lastOk" style="font-size:12px;opacity:.8"></span>
+  <button id="refreshBtn">手动刷新</button>
+</header>
+<div id="statusbar">
+  <span id="scanStatus">等待首次扫描…</span>
+  <span id="dataAge"></span>
+  <span id="warnings" class="warn"></span>
+</div>
+<main>
+  <div class="filters" id="filters">
+    <button data-f="all" class="on">全部</button>
+    <button data-f="other">只看他人</button>
+    <button data-f="self">只看自己</button>
+    <button data-f="unknown">只看未知</button>
+    <span class="count" id="count"></span>
+  </div>
+  <table>
+    <thead id="thead-main">
+      <tr><th data-k="port">端口<span class="arr"></span></th><th data-k="addr">地址<span class="arr"></span></th><th data-k="proc">进程<span class="arr"></span></th><th data-k="name">归属<span class="arr"></span></th><th data-k="level">级别<span class="arr"></span></th><th data-k="started">启动时间<span class="arr"></span></th><th style="width:220px">操作</th></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div class="card">
+    <h3>保护自检</h3>
+    <div class="kv" id="protectInfo">加载中…</div>
+  </div>
+</main>
+
+<div class="dialog-back hidden" id="dlgBack">
+  <div class="dialog" id="dlg"></div>
+</div>
+
+<script>
+"use strict";
+/* 端口控制台前端
+   - 5s 轮询 + in-flight 防堆积 + 请求序号防旧覆盖新 + 页面隐藏暂停
+   - 级别配色与文字标签双通道
+   - 关闭两阶段弹窗、行内命名
+   - 命令行一律 textContent 渲染，防注入 */
+
+var POLL_MS = 5000;
+var curFilter = "all";
+var lastItems = [];
+var seq = 0;                 // 请求序号：旧响应不得覆盖新响应
+var inFlight = false;
+var busyPid = null;          // 操作期间只禁用当前行
+var refreshTimer = null;
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s == null ? "" : s); }
+
+function toast(msg, isErr) {
+  var t = document.createElement("div");
+  t.className = "toast" + (isErr ? " err" : "");
+  t.textContent = msg;                    // textContent 渲染
+  document.body.appendChild(t);
+  setTimeout(function () { t.remove(); }, 4200);
+}
+
+/* ---- 级别徽章：颜色与文字同时出现（双通道） ---- */
+var LEVEL_META = {
+  system:  { cls: "system",   dot: "🔴", label: "系统" },
+  other:   { cls: "other",    dot: "🟡", label: "他人" },
+  self:    { cls: "self",     dot: "🟢", label: "自己" },
+  unknown: { cls: "unknown",  dot: "⚪", label: "未知" }
+};
+function levelBadge(level) {
+  var m = LEVEL_META[level] || LEVEL_META.unknown;
+  var s = document.createElement("span");
+  s.className = "lvl " + m.cls;
+  s.textContent = m.dot + " " + m.label;   // 双通道：色块＋文字
+  return s;
+}
+
+/* ---- 数据拉取 ----
+   5 秒轮询吃服务端展示缓存；只有手动刷新带 ?refresh=1
+   绕缓存强制新鲜扫描（手动刷新不许是假开关）。
+   状态栏只加"数据时间＋可能过期"文字（不加任何新交互控件）。 */
+function pollOnce(forceFresh) {
+  if (inFlight || document.hidden) return;
+  inFlight = true;
+  var mySeq = ++seq;
+  $("scanStatus").textContent = "扫描中…";
+  fetch("/api/v1/ports" + (forceFresh ? "?refresh=1" : ""), { method: "GET" })
+    .then(function (r) {
+      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) {
+        throw new Error((j && j.message) ? (j.reason + ": " + j.message) : ("HTTP " + r.status));
+      });
+      return r.json();
+    })
+    .then(function (j) {
+      if (mySeq !== seq) return;          // 过期响应丢弃
+      inFlight = false;
+      lastItems = j.items || [];
+      $("lastOk").textContent = "最后刷新 " + new Date().toLocaleTimeString();
+      $("scanStatus").textContent = "数据正常（" + lastItems.length + " 项）";
+      $("scanStatus").className = "";
+      if (j.data_cached) {
+        $("dataAge").textContent = "数据时间 " + (j.data_time || "未知")
+          + "（缓存数据，最长可能滞后 5 秒，手动刷新取最新）";
+      } else {
+        $("dataAge").textContent = "数据时间 " + (j.data_time || "未知") + "（新鲜扫描）";
+      }
+      var w = (j.warnings || []).join("；");
+      $("warnings").textContent = w;
+      render();
+      loadProtection();
+    })
+    .catch(function (e) {
+      if (mySeq !== seq) return;
+      inFlight = false;
+      // 失败时保留上一次数据，不清空成全无；标过期
+      $("scanStatus").textContent = "扫描失败（保留上次数据，已过期）：" + e.message;
+      $("scanStatus").className = "err";
+      render();
+    });
+}
+function schedulePoll() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(pollOnce, POLL_MS);
+}
+document.addEventListener("visibilitychange", function () {
+  if (!document.hidden) pollOnce();       // 重新可见立即刷新
+});
+
+/* ---- 保护自检区 ---- */
+function loadProtection() {
+  fetch("/api/v1/protection").then(function (r) { return r.json(); }).then(function (j) {
+    if (!j.ok) return;
+    var el = $("protectInfo");
+    el.textContent = "";
+    var mk = function (txt) { var d = document.createElement("div"); d.textContent = txt; return d; };
+    el.appendChild(mk("当前保护端口（监听中）：" + (j.active_ports.length ? j.active_ports.join(", ") : "无")));
+    var h = mk("历史保护端口（当前未监听，不代表删除保护）：" + (j.history_ports.length ? j.history_ports.join(", ") : "无"));
+    el.appendChild(h);
+    el.appendChild(mk("保护进程名单：" + j.protected_processes.join(", ")));
+    el.appendChild(mk("运行时附加保护：控制台自身 PID/端口、pid≤4、Session 0、System32 关键宿主、会话信息缺失项（fail closed）"));
+  }).catch(function () {});
+}
+
+/* ---- 表格渲染 ---- */
+function rowMatches(it) {
+  if (curFilter === "all") return true;
+  return it.level === curFilter;
+}
+function render() {
+  var tb = $("tbody");
+  tb.textContent = "";
+  var rows = lastItems.filter(rowMatches);
+  if (sortKey) {
+    rows.sort(function (a, b) {
+      var va = sortValue(a, sortKey), vb = sortValue(b, sortKey);
+      return (va < vb ? -1 : va > vb ? 1 : 0) * sortDir;
+    });
+  }
+  var shown = rows.length;
+  rows.forEach(function (it) {
+    var tr = document.createElement("tr");
+
+    var td1 = document.createElement("td"); td1.className = "mono"; td1.textContent = it.port;
+    var td2 = document.createElement("td"); td2.className = "mono"; td2.textContent = it.addr;
+    var td3 = document.createElement("td"); td3.className = "mono"; td3.textContent = it.proc;
+
+    // 归属：名称＋手工/过期标记
+    var td4 = document.createElement("td");
+    var nameSpan = document.createElement("span");
+    nameSpan.textContent = it.name || "（未命名）";
+    td4.appendChild(nameSpan);
+    if (it.source === "manual") {
+      var t1 = document.createElement("span"); t1.className = "tag"; t1.textContent = "手工";
+      td4.appendChild(t1);
+    }
+    if (it.mapping_stale) {
+      var t2 = document.createElement("span"); t2.className = "tag stale"; t2.textContent = "映射可能过期";
+      td4.appendChild(t2);
+    }
+
+    var td5 = document.createElement("td"); td5.appendChild(levelBadge(it.level));
+    if (it.kill_allowed === false && it.protected_reason) {
+      var pr = document.createElement("div");
+      pr.className = "protected-reason";
+      pr.textContent = it.protected_reason;
+      td5.appendChild(pr);
+    }
+
+    var td6 = document.createElement("td"); td6.className = "mono"; td6.textContent = it.started || "—";
+
+    var td7 = document.createElement("td"); td7.className = "rowbtns";
+    var killBtn = document.createElement("button");
+    killBtn.className = "danger";
+    killBtn.textContent = "关闭";
+    killBtn.disabled = (it.kill_allowed === false) || (busyPid === it.pid);
+    if (it.kill_allowed === false) killBtn.title = "受保护：" + (it.protected_reason || "系统级");
+    killBtn.addEventListener("click", function () { startKillFlow(it); });
+    td7.appendChild(killBtn);
+
+    var nameBtn = document.createElement("button");
+    nameBtn.textContent = it.name ? "改名" : "起个名";
+    nameBtn.disabled = (it.kill_allowed === false) || (busyPid === it.pid);
+    nameBtn.addEventListener("click", function () { startRenameFlow(it, tr, td4); });
+    td7.appendChild(nameBtn);
+
+    var detBtn = document.createElement("button");
+    detBtn.textContent = "详情";
+    detBtn.addEventListener("click", function () { toggleDetail(it, tr); });
+    td7.appendChild(detBtn);
+
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+    tr.appendChild(td4); tr.appendChild(td5); tr.appendChild(td6); tr.appendChild(td7);
+    tr.dataset.pid = it.pid;
+    tr.dataset.port = it.port;
+    tb.appendChild(tr);
+  });
+  $("count").textContent = "显示 " + shown + " / 共 " + lastItems.length + " 项";
+}
+
+function toggleDetail(it, tr) {
+  var pid = it.pid + ":" + it.port;
+  var exist = document.getElementById("det-" + btoa(unescape(encodeURIComponent(pid))).replace(/=/g, ""));
+  if (exist) { exist.remove(); return; }
+  var dtr = document.createElement("tr");
+  dtr.className = "detail";
+  var td = document.createElement("td");
+  td.colSpan = 7;
+  var pre = document.createElement("pre");
+  pre.textContent = "PID: " + it.pid + "\n绑定: " + it.addr + ":" + it.port +
+                    "\n进程: " + it.proc + "\n命令行: " + (it.cmdline || "（无）") +
+                    "\n启动: " + (it.started || "—") +
+                    "\n会话: " + (it.session_id == null ? "不可得（fail closed）" : it.session_id) +
+                    (it.protected_reason ? "\n保护原因: " + it.protected_reason : "");
+  td.appendChild(pre);
+  dtr.appendChild(td);
+  dtr.id = "det-" + btoa(unescape(encodeURIComponent(pid))).replace(/=/g, "");
+  tr.after(dtr);
+}
+
+/* ---- 关闭两阶段 ---- */
+function modal(htmlBuilder) {
+  var back = $("dlgBack"), dlg = $("dlg");
+  dlg.textContent = "";
+  htmlBuilder(dlg);
+  back.classList.remove("hidden");
+  return function close() { back.classList.add("hidden"); };
+}
+function kvLine(dlg, text) {
+  var d = document.createElement("div");
+  d.className = "kv";
+  d.textContent = text;
+  dlg.appendChild(d);
+}
+
+function startKillFlow(it) {
+  var showName = it.name || ("未知进程 " + it.proc);
+  var closeDlg = modal(function (dlg) {
+    var h = document.createElement("h3"); h.textContent = "临刑告知单（第一次确认）"; dlg.appendChild(h);
+    kvLine(dlg, "目标：显示名「" + showName + "」");
+    kvLine(dlg, "地址：" + it.addr + ":" + it.port + "　PID：" + it.pid + "　进程：" + it.proc);
+    kvLine(dlg, "启动时间：" + (it.started || "—"));
+    if (it.level === "unknown") {
+      var un = document.createElement("div"); un.className = "note danger-note";
+      un.textContent = "⚠ 未知进程：请先确认这是谁再动手。";
+      dlg.appendChild(un);
+    }
+    if (it.level === "other") {
+      var ask = document.createElement("div"); ask.className = "note";
+      ask.textContent = "他人进程：请输入「确认」二字以继续。";
+      dlg.appendChild(ask);
+      var inp = document.createElement("input");
+      inp.type = "text"; inp.placeholder = "输入：确认";
+      dlg.appendChild(inp);
+      var btns = document.createElement("div"); btns.className = "btns";
+      var c = document.createElement("button"); c.textContent = "取消";
+      c.addEventListener("click", closeDlg);
+      var go = document.createElement("button"); go.className = "primary"; go.textContent = "尝试正常关闭"; go.disabled = true;
+      inp.addEventListener("input", function () { go.disabled = (inp.value.trim() !== "确认"); });
+      go.addEventListener("click", function () {
+        closeDlg();
+        submitKill(it, false, "");
+      });
+      btns.appendChild(c); btns.appendChild(go); dlg.appendChild(btns);
+      return;
+    }
+    var note = document.createElement("div"); note.className = "note";
+    note.textContent = "将尝试正常关闭；若需强制结束，会再次询问。";
+    dlg.appendChild(note);
+    var btns2 = document.createElement("div"); btns2.className = "btns";
+    var c2 = document.createElement("button"); c2.textContent = "取消";
+    c2.addEventListener("click", closeDlg);
+    var go2 = document.createElement("button"); go2.className = "primary"; go2.textContent = "尝试正常关闭";
+    go2.addEventListener("click", function () { closeDlg(); submitKill(it, false, ""); });
+    btns2.appendChild(c2); btns2.appendChild(go2); dlg.appendChild(btns2);
+  });
+  void closeDlg;
+}
+
+function submitKill(it, force, ticket) {
+  busyPid = it.pid; render();
+  var body = { port: it.port, pid: it.pid, proc: it.proc, started: it.started,
+               force: force, force_ticket: ticket || "" };
+  fetch("/api/v1/ui/kill", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).then(function (r) {
+    return r.json().catch(function () { return { ok: false, reason: "bad_response", message: "HTTP " + r.status }; })
+      .then(function (j) { return { code: r.status, j: j }; });
+  }).then(function (res) {
+    busyPid = null; render();
+    var j = res.j;
+    if (j.ok) {
+      toast(j.message || "已关闭");
+      pollOnce();
+      return;
+    }
+    if (res.code === 428 && j.reason === "force_confirm_required") {
+      askForceConfirm(it, j.force_ticket);
+      return;
+    }
+    toast("[" + (j.reason || res.code) + "] " + (j.message || "操作失败"), true);
+    pollOnce();          // 409 等失败后也刷新
+  }).catch(function (e) {
+    busyPid = null; render();
+    toast("请求失败: " + e.message, true);
+  });
+}
+
+function askForceConfirm(it, ticket) {
+  var closeDlg = modal(function (dlg) {
+    var h = document.createElement("h3"); h.textContent = "强制结束确认（第二次）"; dlg.appendChild(h);
+    kvLine(dlg, "目标：「" + (it.name || it.proc) + "」 " + it.addr + ":" + it.port + "　PID：" + it.pid);
+    var dn = document.createElement("div"); dn.className = "note danger-note";
+    dn.textContent = "正常关闭未完成。将强制结束该进程及其子进程（taskkill /T /F），未保存数据会丢失。";
+    dlg.appendChild(dn);
+    var btns = document.createElement("div"); btns.className = "btns";
+    var c = document.createElement("button"); c.textContent = "取消";
+    c.addEventListener("click", function () { closeDlg(); });
+    var go = document.createElement("button"); go.className = "confirm-kill"; go.textContent = "确认强制结束";
+    go.addEventListener("click", function () {
+      closeDlg();
+      submitKill(it, true, ticket);
+    });
+    btns.appendChild(c); btns.appendChild(go); dlg.appendChild(btns);
+  });
+}
+
+/* ---- 行内命名 ---- */
+function startRenameFlow(it, tr, td4) {
+  td4.textContent = "";
+  var nameInp = document.createElement("input");
+  nameInp.className = "inline-name";
+  nameInp.value = it.name || "";
+  nameInp.placeholder = "名称";
+  var sel = document.createElement("select");
+  sel.className = "inline-level";
+  var optOther = document.createElement("option"); optOther.value = "other"; optOther.textContent = "他人";
+  var optSelf = document.createElement("option"); optSelf.value = "self"; optSelf.textContent = "自己";
+  sel.appendChild(optOther); sel.appendChild(optSelf);
+  sel.value = (it.source === "manual" && it.level === "self") ? "self" : "other";  // 未知默认他人
+  var okBtn = document.createElement("button"); okBtn.textContent = "存";
+  var noBtn = document.createElement("button"); noBtn.textContent = "✕";
+  td4.appendChild(nameInp); td4.appendChild(sel); td4.appendChild(okBtn); td4.appendChild(noBtn);
+  nameInp.focus();
+
+  var restore = function () { busyPid = null; render(); };
+  var save = function () {
+    var nm = nameInp.value.trim();
+    if (!nm) { toast("名称不能为空", true); return; }
+    fetch("/api/v1/ui/rename", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ port: it.port, name: nm, level: sel.value })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.ok) { toast("已保存"); } else { toast("[" + j.reason + "] " + j.message, true); }
+      restore();
+    }).catch(function (e) { toast("保存失败: " + e.message, true); restore(); });
+  };
+  okBtn.addEventListener("click", save);
+  noBtn.addEventListener("click", restore);
+  nameInp.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") save();
+    if (ev.key === "Escape") restore();
+  });
+}
+
+/* ---- 表头排序（1.1 UI：纯客户端排序，轮询刷新后状态保持）---- */
+var sortKey = "port", sortDir = 1;          // 默认按端口升序（与服务端天然序一致）
+var LEVEL_ORDER = { system: 0, other: 1, self: 2, unknown: 3 };   // 级别按语义排序，非字母序
+function sortValue(it, key) {
+  if (key === "level") return (LEVEL_ORDER[it.level] != null) ? LEVEL_ORDER[it.level] : 9;
+  if (key === "port") return it.port;
+  var v = it[key];
+  if (typeof v !== "string") v = (v == null ? "" : String(v));
+  return v.toLowerCase() || "￿";      // 空值永远排在后面
+}
+function updateSortIndicators() {
+  document.querySelectorAll("th[data-k]").forEach(function (th) {
+    var on = th.dataset.k === sortKey;
+    th.classList.toggle("sorted", on);
+    th.querySelector(".arr").textContent = on ? (sortDir === 1 ? "▲" : "▼") : "";
+  });
+}
+$("thead-main").addEventListener("click", function (ev) {
+  var th = ev.target.closest("th[data-k]");
+  if (!th) return;
+  var k = th.dataset.k;
+  if (sortKey === k) { sortDir = -sortDir; } else { sortKey = k; sortDir = 1; }
+  updateSortIndicators();
+  render();
+});
+
+/* ---- 筛选与刷新 ---- */
+$("filters").addEventListener("click", function (ev) {
+  var b = ev.target.closest("button");
+  if (!b) return;
+  curFilter = b.dataset.f;
+  document.querySelectorAll("#filters button").forEach(function (x) { x.classList.remove("on"); });
+  b.classList.add("on");
+  render();
+});
+$("refreshBtn").addEventListener("click", function () { pollOnce(true); });   // 手动刷新绕缓存
+$("dlgBack").addEventListener("click", function (ev) {
+  if (ev.target === this) this.classList.add("hidden");   // 点空白不误关强杀确认（保守：允许关闭）
+});
+
+$("addr").textContent = "http://" + location.host + "　·　只监听 127.0.0.1，绝不开放外网";
+updateSortIndicators();
+pollOnce();
+schedulePoll();
+</script>
+</body>
+</html>

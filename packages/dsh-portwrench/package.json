@@ -1,0 +1,24 @@
+{
+  "name": "dsh-portwrench",
+  "version": "0.1.0",
+  "description": "PortWrench panel inside DSH: view listening ports, identify their owners, close process trees. Requires PortWrench (Windows).",
+  "type": "module",
+  "main": "lib/index.mjs",
+  "exports": {
+    ".": { "default": "./lib/index.mjs" },
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-settings-plugins"]
+    }
+  },
+  "peerDependencies": {},
+  "license": "MIT",
+  "repository": "https://github.com/OldQin-Aurora001/portwrench",
+  "keywords": ["dsh-plugin", "ports", "windows"]
+}

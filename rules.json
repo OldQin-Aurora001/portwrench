@@ -1,0 +1,23 @@
+[
+  { "match": "wechat-work",       "name": "企业微信",      "level": "other",  "order": 1 },
+  { "match": "wechat",            "name": "微信",          "level": "self",   "order": 2 },
+  { "match": "mysql",             "name": "MySQL",         "level": "other",  "order": 3 },
+  { "match": "vscode",            "name": "VS Code",       "level": "self",   "order": 4 },
+  { "match": "jupyter",           "name": "Jupyter",       "level": "self",   "order": 5 },
+  { "match": "docs-server",       "name": "知识库服务",    "level": "self",   "order": 6 },
+  { "match": "devserver",         "name": "开发服务",      "level": "self",   "order": 7 },
+  { "match": "workbench",         "name": "工作台",        "level": "self",   "order": 8 },
+  { "match": "ollama",            "name": "Ollama",        "level": "self",   "order": 9 },
+  { "match": "ComfyUI",           "name": "ComfyUI",       "level": "self",   "order": 10 },
+  { "match": "port_console",      "name": "端口扳手本体",  "level": "self",   "order": 12 },
+  { "match": "wps",               "name": "WPS办公",       "level": "other",  "order": 20 },
+  { "match": "lghub",             "name": "罗技lghub",     "level": "other",  "order": 21 },
+  { "match": "quark",             "name": "夸克浏览器",    "level": "other",  "order": 22 },
+  { "match": "onedrive",          "name": "OneDrive",      "level": "other",  "order": 23 },
+  { "match": "doubao",            "name": "豆包客户端",    "level": "other",  "order": 24 },
+  { "match": "hipsdaemon",        "name": "火绒安全",      "level": "other",  "order": 25 },
+  { "match": "msi.terminalserver","name": "MSI主板工具",    "level": "other",  "order": 26 },
+  { "match": "svchost",           "name": "系统",          "level": "system", "order": 90 },
+  { "match": "System",            "name": "系统",          "level": "system", "order": 91 },
+  { "match": "lsass",             "name": "系统",          "level": "system", "order": 92 }
+]

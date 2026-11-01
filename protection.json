@@ -1,0 +1,7 @@
+{
+  "ports": [135, 139, 445, 3389, 5985, 5986],
+  "process_names": [
+    "System", "Registry", "smss", "csrss", "wininit", "winlogon",
+    "services", "lsass", "MsMpEng"
+  ]
+}
