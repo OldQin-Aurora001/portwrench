@@ -543,6 +543,152 @@ class TestRenameAndConfig(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
+# 单测 12：动态保护（用户 UI 手动保护 / 解除，重启不丢）
+class TestDynamicProtection(unittest.TestCase):
+    def setUp(self):
+        # 模块级 mock 必须自清：本类字母序在 TestPidMatchesStartReal（真 PS 快照）之前，
+        # 不恢复会把真机测试的 scan_snapshot 劫持成假扫描
+        self._snap = pc.scan_snapshot
+        self._listen = pc.scan_listen_ports
+
+    def tearDown(self):
+        pc.scan_snapshot = self._snap
+        pc.scan_listen_ports = self._listen
+
+    def _state(self, tmp):
+        return pc.AppState(tmp, {"rules": pc.validate_rules(pc.DEFAULT_RULES),
+                                 "protection": pc.validate_protection(pc.DEFAULT_PROTECTION),
+                                 "port_map": {}, "unknown": [],
+                                 "dynamic_protected": set(), "warnings": []},
+                            3999, "t", True)
+
+    def _entry(self, port):
+        return {"port": port, "pid": 1234, "proc": "app.exe", "exe": "C:\\app\\app.exe",
+                "session_id": 1, "started": "2026-11-02T00:00:00"}
+
+    def test_12a_protect_unprotect_flow(self):
+        tmp = Path(tempfile.mkdtemp(prefix="pcon-dp-"))
+        try:
+            state = self._state(tmp)
+            state.console_pid = 999999
+            pc.scan_snapshot = lambda: make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
+            pc.scan_listen_ports = lambda: {3084}
+            # 未保护时可杀
+            self.assertIsNone(pc.protection_reason(state, self._entry(3084)))
+            # 保护 → 200，reason 出现，文件落盘
+            code, obj = pc.protect_port(state, {"port": 3084}, "t")
+            self.assertEqual(code, 200)
+            self.assertIn(3084, state.dynamic_protected)
+            self.assertEqual(pc.protection_reason(state, self._entry(3084)), "用户手动保护")
+            saved = json.loads((tmp / "dynamic_protection.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["ports"], [3084])
+            # 幂等：重复保护 200 不重复加
+            code, obj = pc.protect_port(state, {"port": 3084}, "t")
+            self.assertEqual(code, 200)
+            self.assertEqual(state.dynamic_protected, {3084})
+            # 解除 → 200，reason 消失，文件清空
+            code, obj = pc.unprotect_port(state, {"port": 3084}, "t")
+            self.assertEqual(code, 200)
+            self.assertNotIn(3084, state.dynamic_protected)
+            self.assertIsNone(pc.protection_reason(state, self._entry(3084)))
+            saved = json.loads((tmp / "dynamic_protection.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved["ports"], [])
+            # 解除不存在的 → 404
+            code, obj = pc.unprotect_port(state, {"port": 3084}, "t")
+            self.assertEqual(code, 404)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_12b_static_boundary(self):
+        tmp = Path(tempfile.mkdtemp(prefix="pcon-dp-"))
+        try:
+            state = self._state(tmp)
+            state.console_pid = 999999
+            # 静态口：protect 409（无需手动保护）、unprotect 403（不可解除）
+            code, obj = pc.protect_port(state, {"port": 135}, "t")
+            self.assertEqual(code, 409)
+            self.assertEqual(obj["reason"], "already_protected_static")
+            code, obj = pc.unprotect_port(state, {"port": 135}, "t")
+            self.assertEqual(code, 403)
+            self.assertEqual(obj["reason"], "static_protected")
+            # 非法端口
+            for bad in ({"port": 0}, {"port": 70000}, {"port": "x"}):
+                code, obj = pc.protect_port(state, bad, "t")
+                self.assertEqual(code, 400)
+                code, obj = pc.unprotect_port(state, bad, "t")
+                self.assertEqual(code, 400)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_12c_not_listening_and_scan_fail(self):
+        tmp = Path(tempfile.mkdtemp(prefix="pcon-dp-"))
+        try:
+            state = self._state(tmp)
+            state.console_pid = 999999
+            pc.scan_listen_ports = lambda: {1, 2, 3}
+            # 未监听端口不受理（不确定的不保）
+            code, obj = pc.protect_port(state, {"port": 3084}, "t")
+            self.assertEqual(code, 400)
+            self.assertEqual(obj["reason"], "not_listening")
+            # 扫描失败 fail closed
+            def boom():
+                raise pc.ScanError("x")
+            with mock.patch.object(pc, "scan_listen_ports", side_effect=boom):
+                code, obj = pc.protect_port(state, {"port": 3084}, "t")
+                self.assertEqual(code, 503)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_12d_persist_reload_and_corrupt(self):
+        tmp = Path(tempfile.mkdtemp(prefix="pcon-dp-"))
+        try:
+            state = self._state(tmp)
+            state.console_pid = 999999
+            pc.scan_listen_ports = lambda: {3084, 3092}
+            code, _ = pc.protect_port(state, {"port": 3092}, "t")
+            self.assertEqual(code, 200)
+            # 重载：load_and_validate_configs 读回动态表
+            cfg = pc.load_and_validate_configs(tmp)
+            self.assertEqual(cfg["dynamic_protected"], {3092})
+            # 损坏：保留副本新建
+            (tmp / "dynamic_protection.json").write_text("not json", encoding="utf-8")
+            cfg2 = pc.load_and_validate_configs(tmp)
+            self.assertEqual(cfg2["dynamic_protected"], set())
+            self.assertTrue(any("dynamic_protection.json" in w for w in cfg2["warnings"]))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
+# 单测 12e：动态保护 HTTP 路由接线（真 HTTP：ui_routes 集合＋同源授权＋杀闸联动）
+class TestDynamicProtectionHttp(ServerCase):
+    SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
+
+    def test_12e_protect_kill_403_unprotect_over_http(self):
+        hdr = {"Origin": f"http://127.0.0.1:{FAKE_PORT}", "Sec-Fetch-Site": "same-origin"}
+        with mock.patch.object(pc, "scan_listen_ports", return_value={3084}), \
+             mock.patch.object(pc, "run_taskkill", return_value=(True, "")) as tk:
+            # protect 走真 HTTP（路由集合＋同源授权＋函数接线全链）
+            st, obj = http_req("POST", "/api/v1/ui/protect", {"port": 3084}, hdr)
+            self.assertEqual(st, 200)
+            self.assertTrue(obj["ok"])
+            # 保护生效：by-port 杀请求 403 且原因带"用户手动保护"
+            st, obj = http_req("GET", "/api/v1/agent/ports?port=3084", None, AGENT_HDR)
+            sid = obj["items"][0]["snapshot_id"]
+            st, obj = http_req("POST", "/api/v1/agent/kill-by-port",
+                               {"port": 3084, "snapshot_id": sid, "confirm": True}, AGENT_HDR)
+            self.assertEqual(st, 403)
+            self.assertEqual(obj["reason"], "kill_not_allowed")
+            self.assertIn("用户手动保护", obj.get("message", ""))
+            tk.assert_not_called()
+            # 解除走真 HTTP；重复解除 → 404
+            st, obj = http_req("POST", "/api/v1/ui/unprotect", {"port": 3084}, hdr)
+            self.assertEqual(st, 200)
+            st, obj = http_req("POST", "/api/v1/ui/unprotect", {"port": 3084}, hdr)
+            self.assertEqual(st, 404)
+            self.assertEqual(obj["reason"], "not_dynamic_protected")
+            tk.assert_not_called()
+
+
 # 单测 12-14走真 HTTP
 class TestAuthMatrix(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})

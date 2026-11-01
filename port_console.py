@@ -700,8 +700,22 @@ def load_and_validate_configs(base_dir: Path) -> dict:
         except Exception:
             _keep_corrupt_copy(base_dir, unk_path, "unknown.json", warnings)
 
+    # 动态保护表（用户 UI 手动保护，重启不丢）：损坏保留副本新建，同 port_map 策略
+    dp_path = base_dir / "dynamic_protection.json"
+    dynamic_protected = set()
+    if dp_path.exists():
+        try:
+            raw = read_json_file(dp_path)
+            ports = raw.get("ports") if isinstance(raw, dict) else None
+            if not isinstance(ports, list):
+                raise ValueError("必须是含 ports 数组的对象")
+            dynamic_protected = {p for p in ports if is_int(p) and 1 <= p <= 65535}
+        except Exception:
+            _keep_corrupt_copy(base_dir, dp_path, "dynamic_protection.json", warnings)
+
     return {"rules": rules, "protection": protection, "port_map": port_map,
-            "unknown": unknown, "warnings": warnings}
+            "unknown": unknown, "dynamic_protected": dynamic_protected,
+            "warnings": warnings}
 
 
 # ----------------------------------------------------------------------------
@@ -808,6 +822,8 @@ def protection_reason(state, entry: dict):
         return "控制台自身端口"
     if entry["port"] in state.protection["ports"]:
         return "系统保护端口"
+    if entry["port"] in state.dynamic_protected:
+        return "用户手动保护"
     proc = entry["proc"] or ""
     if proc != "?" and any(_proc_name_matches(n, proc) for n in state.protection["process_names"]):
         return f"系统保护进程({proc})"
@@ -1154,6 +1170,7 @@ class AppState:
         self.protection = configs["protection"]
         self.port_map = configs["port_map"]
         self.unknown = configs["unknown"]
+        self.dynamic_protected = set(configs.get("dynamic_protected") or ())
         self.warnings = list(configs["warnings"])
         self.console_port = console_port
         self.console_pid = os.getpid()
@@ -1642,6 +1659,63 @@ def rename_port(state, body: dict, client_id: str) -> tuple:
     return 200, {"ok": True, "item": item, "message": "命名已保存"}
 
 
+def protect_port(state, body: dict, client_id: str) -> tuple:
+    """用户手动保护：按端口加入动态保护表（重启不丢）。
+    静态系统口不受理（已受保护）；只保护当前监听中的端口（不确定的不保）。"""
+    port = body.get("port")
+    if not is_int(port) or not (1 <= port <= 65535):
+        return 400, error_body("invalid_request", "port 非法")
+    if port in state.protection["ports"]:
+        return 409, error_body("already_protected_static", "该端口在系统静态保护表中，无需手动保护")
+    if port in state.dynamic_protected:
+        return 200, {"ok": True, "message": f"端口 {port} 已在手动保护中"}
+    try:
+        listening = scan_listen_ports()
+    except ScanError as e:
+        return 503, error_body("scan_failed", f"扫描失败，无法确认端口监听状态: {e}")
+    if port not in listening:
+        return 400, error_body("not_listening", "端口当前未监听，无从保护")
+    with state.state_lock:
+        state.dynamic_protected.add(port)
+        try:
+            atomic_write_json(state.base_dir / "dynamic_protection.json",
+                              {"ports": sorted(state.dynamic_protected)})
+        except OSError as e:
+            state.dynamic_protected.discard(port)
+            return 500, error_body("internal_error", f"保护表写盘失败: {e}")
+    try:  # 保护已生效，审计失败只记日志不回滚（次级故障不推翻主操作）
+        write_audit_event(state, {"ts": now_iso(), "channel": "ui", "port": port,
+                                  "client_id": client_id, "action": "protect"})
+    except OSError as e:
+        print(f"[port-console] 保护审计写盘失败: {e}", file=sys.stderr)
+    return 200, {"ok": True, "message": f"端口 {port} 已保护，关闭请求将被拒绝"}
+
+
+def unprotect_port(state, body: dict, client_id: str) -> tuple:
+    """解除手动保护：仅限动态表条目；静态系统保护不可通过 API 解除。"""
+    port = body.get("port")
+    if not is_int(port) or not (1 <= port <= 65535):
+        return 400, error_body("invalid_request", "port 非法")
+    if port in state.protection["ports"]:
+        return 403, error_body("static_protected", "静态系统保护不可解除")
+    if port not in state.dynamic_protected:
+        return 404, error_body("not_dynamic_protected", "该端口不在手动保护表中")
+    with state.state_lock:
+        state.dynamic_protected.discard(port)
+        try:
+            atomic_write_json(state.base_dir / "dynamic_protection.json",
+                              {"ports": sorted(state.dynamic_protected)})
+        except OSError as e:
+            state.dynamic_protected.add(port)
+            return 500, error_body("internal_error", f"保护表写盘失败: {e}")
+    try:
+        write_audit_event(state, {"ts": now_iso(), "channel": "ui", "port": port,
+                                  "client_id": client_id, "action": "unprotect"})
+    except OSError as e:
+        print(f"[port-console] 解除保护审计写盘失败: {e}", file=sys.stderr)
+    return 200, {"ok": True, "message": f"端口 {port} 已解除手动保护"}
+
+
 # ----------------------------------------------------------------------------
 # HTTP 层
 # ----------------------------------------------------------------------------
@@ -1778,7 +1852,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._send_json(401, error_body("unauthorized", "禁止通过 URL query 传 token"))
             return
 
-        ui_routes = {"/api/v1/ui/rename", "/api/v1/ui/kill"}
+        ui_routes = {"/api/v1/ui/rename", "/api/v1/ui/kill",
+                     "/api/v1/ui/protect", "/api/v1/ui/unprotect"}
         agent_routes = {"/api/v1/agent/kill": "strict",
                         "/api/v1/agent/kill-by-port": "by_port"}
 
@@ -1811,6 +1886,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 http_code, resp = self._ui_kill(state, body, self._client_id())
             elif path == "/api/v1/ui/rename":
                 http_code, resp = rename_port(state, body, self._client_id())
+            elif path == "/api/v1/ui/protect":
+                http_code, resp = protect_port(state, body, self._client_id())
+            elif path == "/api/v1/ui/unprotect":
+                http_code, resp = unprotect_port(state, body, self._client_id())
             else:
                 mode = agent_routes[path]
                 code2, reason2, msg2, parsed = parse_close_request(state, body, mode, "agent")

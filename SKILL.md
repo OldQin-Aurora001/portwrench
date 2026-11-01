@@ -1,6 +1,6 @@
 ---
 name: portwrench
-version: 1.1.0
+version: 1.1.1
 author: PortWrench Team
 license: MIT
 metadata:
@@ -27,7 +27,7 @@ description: "Use when 查本机哪个端口被谁占了、关掉关了黑框还
 2. **禁扫端口找服务**——先试 `http://127.0.0.1:3999/api/v1/health`，
    不通读本包 `runtime.json` 的 `base_url`；
 3. **403 不要再试**——受保护目标（保护端口/Session 0/System32 宿主/信息读不到
-   fail closed），工具拒杀是设计不是故障；
+   fail closed/用户在面板上手动保护的目标），工具拒杀是设计不是故障；
 4. **只有 `ok:true 且 remaining=[]` 才算关干净**；
 5. token（本包 `api_token.txt`）等同本机授权：不打印、不落聊天窗、不外传。
 
@@ -73,8 +73,8 @@ Header: X-Port-Console-Token: <token>（建议再加 X-Port-Console-Client: <你
 ## 自验
 
 ```
-py -3 -m unittest discover -s tests -v        # 73 个单测
-py -3 testscceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt   # 21 步
+py -3 -m unittest discover -s tests -v        # 79 个单测
+py -3 tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt   # 21 步
 ```
 
 ---
@@ -98,7 +98,8 @@ py -3 testscceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_t
 2. **Never scan ports to find the service.** Try `http://127.0.0.1:3999/api/v1/health`
    first; if down, read `base_url` from `runtime.json` in this package;
 3. **On 403, stop.** The target is protected (protected ports / Session 0 /
-   System32 hosts / unreadable info → fail-closed). Refusal is by design;
+   System32 hosts / unreadable info → fail-closed / user-protected via the panel).
+   Refusal is by design;
 4. **Done means `ok:true` AND `remaining=[]`.** Anything else is not clean;
 5. The token (`api_token.txt`) equals local authorization: never print it,
    never paste it into chats, never share it.
@@ -147,6 +148,6 @@ Header: X-Port-Console-Token: <token>   (add X-Port-Console-Client: <your-name> 
 ## Self-test
 
 ```
-py -3 -m unittest discover -s tests -v        # 73 unit tests
-py -3 testscceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt   # 21 steps
+py -3 -m unittest discover -s tests -v        # 79 unit tests
+py -3 tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt   # 21 steps
 ```

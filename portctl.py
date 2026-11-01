@@ -160,8 +160,10 @@ def cmd_find(port_no, srv_port, token):
     lvl = LEVEL_TXT.get(p.get("level"), "?")
     killable = "可杀" if p.get("kill_allowed") else "不可杀"
     print(f"[OK] 端口 {port_no}: {p['proc']} (PID {p['pid']}, {name}, {lvl}, {killable})")
-    if sid:
+    if sid and p.get("kill_allowed"):
         print(f"     指纹已下发（60 秒有效），可直接 kill")
+    elif sid:
+        print("     指纹仅供核对（60 秒有效），不可 kill——目标是受保护的")
     else:
         print("     未下发指纹（可能受保护或多占用），kill 前先看 kill_allowed")
     if p.get("protected_reason"):

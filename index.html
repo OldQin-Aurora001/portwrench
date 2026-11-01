@@ -189,6 +189,7 @@ var lastItems = [];
 var seq = 0;                 // 请求序号：旧响应不得覆盖新响应
 var inFlight = false;
 var busyPid = null;          // 操作期间只禁用当前行
+var editLock = 0;            // 行内改名编辑中 >0：暂停轮询与刷新（打字时机器不动桌子）
 var refreshTimer = null;
 
 function $(id) { return document.getElementById(id); }
@@ -223,6 +224,7 @@ function levelBadge(level) {
    状态栏只加"数据时间＋可能过期"文字（不加任何新交互控件）。 */
 function pollOnce(forceFresh) {
   if (inFlight || document.hidden) return;
+  if (editLock > 0) return;              // 编辑中：不拉数据不重渲染，保护输入中的表单
   inFlight = true;
   var mySeq = ++seq;
   $("scanStatus").textContent = "扫描中…";
@@ -344,6 +346,21 @@ function render() {
     nameBtn.disabled = (it.kill_allowed === false) || (busyPid === it.pid);
     nameBtn.addEventListener("click", function () { startRenameFlow(it, tr, td4); });
     td7.appendChild(nameBtn);
+
+    var protBtn = null;
+    if (it.kill_allowed === false) {
+      if (it.protected_reason === "用户手动保护") {
+        protBtn = document.createElement("button");
+        protBtn.textContent = "解除保护";
+        protBtn.addEventListener("click", function () { confirmUnprotect(it); });
+      }        // 其余受保护（静态系统口等）不可解除，不加按钮
+    } else {
+      protBtn = document.createElement("button");
+      protBtn.textContent = "保护";
+      protBtn.disabled = (busyPid === it.pid);
+      protBtn.addEventListener("click", function () { doProtect(it, protBtn); });
+    }
+    if (protBtn) td7.appendChild(protBtn);
 
     var detBtn = document.createElement("button");
     detBtn.textContent = "详情";
@@ -490,6 +507,7 @@ function askForceConfirm(it, ticket) {
 
 /* ---- 行内命名 ---- */
 function startRenameFlow(it, tr, td4) {
+  editLock++;                // 编辑期间暂停轮询（restore 是唯一出口，必减）
   td4.textContent = "";
   var nameInp = document.createElement("input");
   nameInp.className = "inline-name";
@@ -506,7 +524,7 @@ function startRenameFlow(it, tr, td4) {
   td4.appendChild(nameInp); td4.appendChild(sel); td4.appendChild(okBtn); td4.appendChild(noBtn);
   nameInp.focus();
 
-  var restore = function () { busyPid = null; render(); };
+  var restore = function () { busyPid = null; editLock--; render(); };
   var save = function () {
     var nm = nameInp.value.trim();
     if (!nm) { toast("名称不能为空", true); return; }
@@ -524,6 +542,54 @@ function startRenameFlow(it, tr, td4) {
   nameInp.addEventListener("keydown", function (ev) {
     if (ev.key === "Enter") save();
     if (ev.key === "Escape") restore();
+  });
+}
+
+/* ---- 手动保护 / 解除 ----
+   保护=收敛方向，点一下立即生效；解除=放权方向，自绘确认防手滑。
+   静态系统保护（protection.json）不可通过页面解除。 */
+function doProtect(it, btn) {
+  if (btn) btn.disabled = true;
+  fetch("/api/v1/ui/protect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ port: it.port })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j.ok) { toast(j.message || "已保护"); } else { toast("[" + j.reason + "] " + j.message, true); }
+    pollOnce(true);
+  }).catch(function (e) {
+    toast("保护失败: " + e.message, true);
+    if (btn) btn.disabled = false;
+  });
+}
+
+function doUnprotect(it) {
+  fetch("/api/v1/ui/unprotect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ port: it.port })
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (j.ok) { toast(j.message || "已解除"); } else { toast("[" + j.reason + "] " + j.message, true); }
+    pollOnce(true);
+  }).catch(function (e) { toast("解除失败: " + e.message, true); });
+}
+
+function confirmUnprotect(it) {
+  var closeDlg = modal(function (dlg) {
+    var h = document.createElement("h3"); h.textContent = "解除手动保护确认"; dlg.appendChild(h);
+    kvLine(dlg, "端口：" + it.port + "　进程：" + (it.proc || "?"));
+    var dn = document.createElement("div"); dn.className = "note";
+    dn.textContent = "解除后该端口将恢复可关闭状态。";
+    dlg.appendChild(dn);
+    var btns = document.createElement("div"); btns.className = "btns";
+    var c = document.createElement("button"); c.textContent = "取消";
+    c.addEventListener("click", function () { closeDlg(); });
+    var go = document.createElement("button"); go.className = "confirm-kill"; go.textContent = "确认解除";
+    go.addEventListener("click", function () {
+      closeDlg();
+      doUnprotect(it);
+    });
+    btns.appendChild(c); btns.appendChild(go); dlg.appendChild(btns);
   });
 }
 
@@ -562,7 +628,10 @@ $("filters").addEventListener("click", function (ev) {
   b.classList.add("on");
   render();
 });
-$("refreshBtn").addEventListener("click", function () { pollOnce(true); });   // 手动刷新绕缓存
+$("refreshBtn").addEventListener("click", function () {
+  if (editLock > 0) { toast("正在编辑名称，保存或取消后再刷新", true); return; }
+  pollOnce(true);
+});   // 手动刷新绕缓存
 $("dlgBack").addEventListener("click", function (ev) {
   if (ev.target === this) this.classList.add("hidden");   // 点空白不误关强杀确认（保守：允许关闭）
 });

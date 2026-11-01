@@ -8,9 +8,9 @@
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `port_console.py` | 96,676 | `268435006AC7D698` |
-| `portctl.py` | 11,314 | `01AABE9B2DF730E1` |
-| `index.html` | 26,937 | `89F10A98AF1D07F7` |
+| `port_console.py` | 101,045 | `C264898A36E6FA1B` |
+| `portctl.py` | 11,454 | `8F99144DEBCD8D49` |
+| `index.html` | 30,108 | `339FB01C5615F6B7` |
 | `rules.json` | 2,000 | `D7868BC85C1CFBCF` |
 | `protection.json` | 176 | `088CF0D167A2CE96` |
 | `ports.json` | 47,595 | `0DC0F560D532EA31` |
@@ -22,10 +22,10 @@
 |---|---|---|
 | `README.md` | 21,469 | `C0CF8A75C015C683` |
 | `README.en.md` | 25,845 | `D86F7BD167C38855` |
-| `使用说明.md` | 8,592 | `EFEACAB8DA80B1A1` |
-| `DEVELOPMENT.md` | 10,061 | `2B302D24D639013E` |
-| `CHANGELOG.md` | 11,418 | `7F595E18BC6A1CEA` |
-| `SKILL.md` | 6,959 | `B8D46160F94166A1` |
+| `使用说明.md` | 9,185 | `26D8E2C0A8EE4CD7` |
+| `DEVELOPMENT.md` | 10,061 | `3C02D990FC663207` |
+| `CHANGELOG.md` | 13,091 | `E53CB4F95076F575` |
+| `SKILL.md` | 7,035 | `CD87867F58A061D2` |
 | `NOTICE.md` | 7,665 | `80F41D7229D95817` |
 | `NOTICE.en.md` | 8,339 | `EB94935F67C93E0F` |
 | `LICENSE` | 1,070 | `0783452F7ED48AE9` |
@@ -47,7 +47,7 @@
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `tests/test_port_console.py` | 95,311 | `CDE4DA523AAB3535` |
+| `tests/test_port_console.py` | 102,831 | `9DEB4BA76EFFA149` |
 | `tests/acceptance_api.py` | 28,722 | `D9629E87C13E89E2` |
 | `tests/fixture_process_tree.py` | 2,555 | `0F3DE8E73EAA003A` |
 | `tests/fixture_windowed.ps1` | 1,526 | `233DD83095BE0349` |
@@ -82,4 +82,4 @@
 | `assets/截图/ScreenShot_2026-11-01_191845_385.png` | 35,435 | `6E02C141683DCDF7` |
 | `assets/截图/ScreenShot_2026-11-01_191935_345.png` | 58,568 | `D847D5BAE9A21226` |
 
-- 清单文件数：53；生成时间：2026-11-01 23:33（发布终稿态 · 内部编号清理后重算）
+- 清单文件数：53；生成时间：2026-11-02 03:55（**1.1.1 定版**：动态保护 protect/unprotect＋持久化＋编辑雷修＋index.html 与家自用版同 sha 339FB01C5615F6B7＋portctl 同 sha 8F99144DEBCD8D49；79 单测＋三发真机验收全过）
