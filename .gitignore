@@ -4,9 +4,11 @@ runtime.json
 kill_audit.jsonl*
 instance.lock
 # M2（T-PORT-003）：用户数据文件——unknown.json 存脱敏后命令行（脱敏有漏网风险）、
-# port_map.json 存本机端口归属。都是本机数据，不要提交。
+# port_map.json 存本机端口归属、dynamic_protection.json 存手动保护（UI「保护」按钮写入）。
+# 都是本机数据，不要提交。
 unknown.json
 port_map.json
+dynamic_protection.json
 __pycache__/
 *.pyc
 

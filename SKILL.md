@@ -25,7 +25,9 @@ description: "Use when 查本机哪个端口被谁占了、关掉关了黑框还
 
 1. **先查后杀，固定口径**——不许跳过查询直接猜端口/猜 PID；
 2. **禁扫端口找服务**——先试 `http://127.0.0.1:3999/api/v1/health`，
-   不通读本包 `runtime.json` 的 `base_url`；
+   **不通不代表服务没起**：本体端口会顺延（3999–4098，被占就 +1），
+   此时读本包 `runtime.json` 的 `base_url` 拿真实端口，**别自己扫区间**；
+   `runtime.json` 也没有才判「未运行」。
 3. **403 不要再试**——受保护目标（保护端口/Session 0/System32 宿主/信息读不到
    fail closed/用户在面板上手动保护的目标），工具拒杀是设计不是故障；
 4. **只有 `ok:true 且 remaining=[]` 才算关干净**；
@@ -73,11 +75,13 @@ Header: X-Port-Console-Token: <token>（建议再加 X-Port-Console-Client: <你
 ## 自验
 
 ```
-py -3 -m unittest discover -s tests -v        # 79 个单测
+py -3 -m unittest discover -s tests -v        # 103 个单测
 py -3 tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt   # 21 步
 ```
 
 ---
+
+> **【中文到此为止】** 家人日常读到这里即可；以下为英文对照段（发布版保留），非必读。
 
 # PortWrench Usage Rules (English)
 
@@ -148,6 +152,6 @@ Header: X-Port-Console-Token: <token>   (add X-Port-Console-Client: <your-name> 
 ## Self-test
 
 ```
-py -3 -m unittest discover -s tests -v        # 79 unit tests
+py -3 -m unittest discover -s tests -v        # 103 unit tests
 py -3 tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt   # 21 steps
 ```

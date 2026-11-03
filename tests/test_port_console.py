@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""PortWrench 端口扳手单元测试。
+"""端口控制台单元测试（T-PORT-002 · 方案 §11.1 40 条）。
 仅标准库 unittest + mock。扫描器/外部命令/窗口函数全部替换为假实现。
 HTTP 层测试起真 ThreadingHTTPServer（127.0.0.1 随机端口），请求用裸 socket 发送
 （Host 头固定 127.0.0.1:3999，与服务端 actual_port=3999 对齐）。
@@ -13,6 +13,7 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
 import unittest.mock as mock
 from contextlib import contextmanager
@@ -227,7 +228,7 @@ def kill_body(port=3084, pid=1234, proc_name="python.exe",
 
 
 class TestNormalize(unittest.TestCase):
-    """单测 1-2。"""
+    """单测 1-2（§11.1.1/2）。"""
 
     def test_1_single_object_array_empty_normalized(self):
         one = {"pid": 1, "ppid": 0, "name": "a.exe", "exe": "", "cmdline": "", "started": ""}
@@ -273,12 +274,12 @@ class TestClassify(unittest.TestCase):
         self.state.console_pid = 999999
         self.state.console_port = 3999
 
-    def test_3_rule_order_jiejie_before_meimei(self):
+    def test_3_rule_order_specific_before_broad(self):
         e = {"port": 1, "addr": "0.0.0.0", "pid": 2, "proc": "x.exe", "exe": "",
-             "cmdline": r"D:\x\wechat-work\app.exe", "started": "s", "session_id": 1}
+             "cmdline": r"D:\x\wechat-work\wxwork.exe", "started": "s", "session_id": 1}
         cls = pc.classify_entry(self.state, e)
         self.assertEqual(cls["name"], "企业微信")      # wechat-work 不被 wechat 抢先
-        e2 = dict(e, cmdline=r"D:\x\wechat\app.exe")
+        e2 = dict(e, cmdline=r"D://x//wechat//WeChat.exe")
         self.assertEqual(pc.classify_entry(self.state, e2)["name"], "微信")
 
     def test_4_priority_manual_auto_unknown_and_protection_top(self):
@@ -363,7 +364,7 @@ class ServerCase(unittest.TestCase):
         self.h.stop()
 
 
-# 单测 6
+# 单测 6（§11.1.6）
 class TestStrictIdentity(ServerCase):
     def run_kill(self, body, scan=None):
         if scan is not None:
@@ -396,7 +397,7 @@ class TestStrictIdentity(ServerCase):
             tk.assert_not_called()
 
 
-# 单测 7
+# 单测 7（§11.1.7）
 class TestUiNoWindow(ServerCase):
     def test_7_ui_first_stage_no_window_428_no_taskkill(self):
         scan = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
@@ -413,7 +414,7 @@ class TestUiNoWindow(ServerCase):
             tk.assert_not_called()
 
 
-# 单测 8
+# 单测 8（§11.1.8）
 class TestTicket(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
     UI_HDR = {"Origin": f"http://127.0.0.1:{FAKE_PORT}", "Sec-Fetch-Site": "same-origin"}
@@ -456,7 +457,7 @@ class TestTicket(ServerCase):
             self.assertTrue(kst2["killed"])
 
 
-# 单测 9
+# 单测 9（§11.1.9）
 class TestTreeProtection(ServerCase):
     def test_9_tree_contains_protected_rejected(self):
         # 子进程 5555 是保护进程（lsass 命中保护名单），父 1234 监听 3084
@@ -471,7 +472,7 @@ class TestTreeProtection(ServerCase):
             tk.assert_not_called()
 
 
-# 单测 10
+# 单测 10（§11.1.10）
 class TestKillButPortBusy(ServerCase):
     def test_10_taskkill_ok_but_port_still_listening(self):
         scan = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
@@ -484,7 +485,7 @@ class TestKillButPortBusy(ServerCase):
             # close_target 内 scan_or_error 被多处调用——直接控制顺序：
             pass
         # 简化：按调用序列 mock scan_or_error：第1次校验扫描、第2次最终验证
-        # （杀前复核=指纹相符放行；杀后验证=根已死——闭包计数区分两阶段）
+        # （B1 杀前复核=指纹相符放行；杀后验证=根已死——闭包计数区分两阶段）
         pc.scan_snapshot = scan
         seq = [pc.normalize_snapshot(scan), pc.normalize_snapshot(scan_after)]
         calls = {"n": 0}
@@ -504,7 +505,7 @@ class TestKillButPortBusy(ServerCase):
             self.assertEqual(obj["remaining"][0]["pid"], 5678)   # 如实返回当前占用者
 
 
-# 单测 11
+# 单测 11（§11.1.11）
 class TestRenameAndConfig(unittest.TestCase):
     def test_11_rename_validation_and_corrupt_config(self):
         tmp = Path(tempfile.mkdtemp(prefix="pcon-r-"))
@@ -689,7 +690,7 @@ class TestDynamicProtectionHttp(ServerCase):
             tk.assert_not_called()
 
 
-# 单测 12-14走真 HTTP
+# 单测 12-14（§11.1.12/13/14）走真 HTTP
 class TestAuthMatrix(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
@@ -771,7 +772,7 @@ class TestAuthMatrix(ServerCase):
             self.assertTrue(st_k["killed"])
 
 
-# 单测 15
+# 单测 15（§11.1.15）
 class TestTokenLeakage(ServerCase):
     def test_15_token_never_in_responses_or_runtime(self):
         st, obj = http_req("GET", "/api/v1/ports")
@@ -789,7 +790,7 @@ class TestTokenLeakage(ServerCase):
         self.assertIn("hmac.compare_digest", src)
 
 
-# 单测 16/19单实例与端口顺延
+# 单测 16/19（§11.1.16/19）单实例与端口顺延
 class TestInstance(unittest.TestCase):
     def test_16_lock_and_runtime_cleanup(self):
         tmp = Path(tempfile.mkdtemp(prefix="pcon-i-"))
@@ -841,7 +842,7 @@ class TestInstance(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
-# 单测 20父先退子残留
+# 单测 20（§11.1.20）父先退子残留
 class TestOrphan(ServerCase):
     def test_20_old_parent_identity_404_child_unaffected(self):
         # 场景：旧父 1234 已退出，子 5678 仍监听 3084
@@ -859,7 +860,7 @@ class TestOrphan(ServerCase):
             self.assertEqual(st, 200)
 
 
-# 单测 21/22
+# 单测 21/22（§11.1.21/22）
 class TestRoutingAndPreScan403(ServerCase):
     def test_21_only_versioned_routes(self):
         for path in ("/api/kill", "/api/rename", "/kill", "/ui/kill", "/agent/ports"):
@@ -884,7 +885,7 @@ class TestRoutingAndPreScan403(ServerCase):
         self.assertEqual((st2, obj2["reason"]), (403, "not_ui_origin"))
         self.assertEqual(counter["n"], 0)
 
-# 单测 23夹具静态判据（真行为在 224 验收跑）
+# 单测 23（§11.1.23）夹具静态判据（真行为在 224 验收跑）
 class TestFixtureFiles(unittest.TestCase):
     def test_23_windowed_fixture_contract(self):
         f = Path(__file__).resolve().parent / "fixture_windowed.ps1"
@@ -916,7 +917,7 @@ class Test24NoTicketInAgentSuccess(ServerCase):
             self.assertNotIn("force_ticket", json.dumps(obj))
 
 
-# 单测 25
+# 单测 25（§11.1.25）
 class TestAlreadyFree(ServerCase):
     def test_25_idle_port_idempotent_no_audit(self):
         before = len(self.h.audit_lines())
@@ -928,7 +929,7 @@ class TestAlreadyFree(ServerCase):
         self.assertEqual(len(self.h.audit_lines()), before)   # 不写审计
 
 
-# 单测 26/40
+# 单测 26/40（§11.1.26/40）
 class TestMultiOwners(ServerCase):
     def test_26_and_40_multi_owners_priority_and_candidates(self):
         # 同端口两个不同 PID
@@ -959,7 +960,7 @@ class TestMultiOwners(ServerCase):
         self.assertIn("snapshot_id", obj["items"][0])
 
 
-# 单测 27
+# 单测 27（§11.1.27）
 class TestByPortProtected(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 445, 700)],
                      [proc(700, name="lsass.exe", exe=r"C:\Windows\System32\lsass.exe")],
@@ -982,7 +983,7 @@ class TestByPortProtected(ServerCase):
             tk.assert_not_called()
 
 
-# 单测 28
+# 单测 28（§11.1.28）
 class TestEchoTargetKilled(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
@@ -995,7 +996,7 @@ class TestEchoTargetKilled(ServerCase):
             self.assertEqual(obj["remaining"], [])           # remaining=[] 才算干净
 
 
-# 单测 29reason 枚举稳定小写
+# 单测 29（§11.1.29）reason 枚举稳定小写
 class TestReasons(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
@@ -1029,7 +1030,7 @@ class TestReasons(ServerCase):
             self.assertTrue(reason.islower() or reason[0].islower(), reason)
 
 
-# 单测 30
+# 单测 30（§11.1.30）
 class TestAgentPortsSlim(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234), conn("::", 9000, 1234)],
                      [proc(1234, cmdline="python serve.py --token abc123")], {"1234": 1})
@@ -1051,7 +1052,7 @@ class TestAgentPortsSlim(ServerCase):
             self.assertEqual((st, obj["reason"]), (400, "invalid_request"))
 
 
-# 单测 31
+# 单测 31（§11.1.31）
 class TestAuditFailClosed(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
@@ -1099,7 +1100,7 @@ class TestAuditFailClosed(ServerCase):
             self.assertIn(k, fin["target"])          # 单测 37 一并覆盖
 
 
-# 单测 32
+# 单测 32（§11.1.32）
 class TestSystemLevelHardReject(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 6501, 800)],
                      [proc(800, name="svchost.exe", exe=r"C:\Windows\System32\svchost.exe")],
@@ -1118,7 +1119,7 @@ class TestSystemLevelHardReject(ServerCase):
             self.assertEqual(st, 403)
 
 
-# 单测 33指纹全路径
+# 单测 33（§11.1.33）指纹全路径
 class TestSnapshotFingerprint(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
@@ -1165,7 +1166,7 @@ class TestSnapshotFingerprint(ServerCase):
             self.assertEqual((st, obj["reason"]), (409, "target_changed"))
 
 
-# 单测 34
+# 单测 34（§11.1.34）
 class TestRateLimit(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
@@ -1176,7 +1177,7 @@ class TestRateLimit(ServerCase):
             now = time.monotonic()
             for _ in range(6):
                 dq.append(now)
-        # 安全审查建议 1：扣费点挪到杀前复核之后——429 出口需指纹相符先过复核
+        # 复核建议 1：扣费点挪到杀前复核之后——429 出口需指纹相符先过复核
         with mock.patch.object(pc, "pid_matches_start", return_value=True):
             st, obj = http_req("POST", "/api/v1/agent/kill", kill_body(), AGENT_HDR)
             self.assertEqual((st, obj["reason"]), (429, "rate_limited"))
@@ -1193,7 +1194,7 @@ class TestRateLimit(ServerCase):
         self.assertTrue(obj["already_free"])
 
 
-# 单测 35
+# 单测 35（§11.1.35）
 class TestRedaction(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)],
                      [proc(1234, cmdline="python serve.py --token abc123 --password pw9")],
@@ -1222,7 +1223,7 @@ class TestRedaction(ServerCase):
                             for u in saved))
 
 
-# 单测 36
+# 单测 36（§11.1.36）
 class TestMappingStale(ServerCase):
     PORT_MAP = {"3084": {"name": "聊天室", "level": "self",
                          "proc": "node.exe", "started": "2026-10-01T00:00:00+08:00"}}
@@ -1243,7 +1244,7 @@ class TestMappingStale(ServerCase):
             self.assertEqual(st, 200)
 
 
-# 单测 37并入 31c 断言（审计含 name/level/source），client_id 缺省补一条
+# 单测 37（§11.1.37）并入 31c 断言（审计含 name/level/source），client_id 缺省补一条
 class TestClientLabel(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
@@ -1259,14 +1260,14 @@ class TestClientLabel(ServerCase):
             self.assertEqual(fin["client_id"], "zcode")
 
 
-# 单测 38
+# 单测 38（§11.1.38）
 class TestHasWindowAbsent(ServerCase):
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
     def test_38_no_has_window_key_and_windowed_force_false_succeeds(self):
         st, obj = http_req("GET", "/api/v1/ports")
         self.assertNotIn("has_window", json.dumps(obj))       # 列表无窗口字段
-        # 有窗：force=false 直接成功，不误入 428（且 UI 通道不携带 confirm——UI 格式）
+        # 有窗：force=false 直接成功，不误入 428（且 UI 通道不携带 confirm——方案 §6.1 UI 格式）
         with self.h.mock_close_ok():
             ui = {"Origin": f"http://127.0.0.1:{FAKE_PORT}", "Sec-Fetch-Site": "same-origin"}
             body = {"port": 3084, "pid": 1234, "proc": "python.exe",
@@ -1310,7 +1311,7 @@ class TestPidMatchesStartReal(unittest.TestCase):
             proc.kill()
 
 
-# 单测 39
+# 单测 39（§11.1.39）
 class TestSessionIdFailClosed(ServerCase):
     def test_39_session0_and_missing_both_403(self):
         base = {"port": 7001, "addr": "0.0.0.0", "pid": 900,
@@ -1337,16 +1338,16 @@ class TestSessionIdFailClosed(ServerCase):
 
 
 # ============================================================================
-# 1.0.1 新增单测 41-46（安全审查 四条阻断＋关联修复的回归锁）
+# T-PORT-003 新增单测 41-46（四条阻断＋关联修复的回归锁）
 # ============================================================================
 
 
 class Test41PreKillRecheck(ServerCase):
-    """单测 41：杀前复核三态。"""
+    """单测 41（V44/V45）：杀前复核三态。"""
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
     def test_41a_fingerprint_mismatch_rejected_before_taskkill(self):
-        """杀前复核 False＋端口仍被占 → 409 target_changed，taskkill 未调用。"""
+        """V44：杀前复核 False＋端口仍被占 → 409 target_changed，taskkill 未调用。"""
         pc.scan_snapshot = lambda: self.SCAN
         with mock.patch.object(pc, "pid_matches_start", return_value=False), \
              mock.patch.object(pc, "run_taskkill", return_value=(True, "")) as tk:
@@ -1374,7 +1375,7 @@ class Test41PreKillRecheck(ServerCase):
             tk.assert_not_called()
 
     def test_41c_fingerprint_match_passes(self):
-        """指纹相符 → 正常杀成功（新闸不误伤正常路径）。"""
+        """V45：指纹相符 → 正常杀成功（新闸不误伤正常路径）。"""
         with self.h.mock_kill(self.SCAN) as kst:
             st, obj = http_req("POST", "/api/v1/agent/kill", kill_body(), AGENT_HDR)
             self.assertEqual(st, 200)
@@ -1382,7 +1383,7 @@ class Test41PreKillRecheck(ServerCase):
 
 
 class Test42StartedRequired(ServerCase):
-    """单测 42：strict 模式 started 必填。"""
+    """单测 42（V46）：strict 模式 started 必填。"""
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
     def test_42_missing_or_empty_started_400(self):
@@ -1397,7 +1398,7 @@ class Test42StartedRequired(ServerCase):
 
 
 class Test43MultiSid(ServerCase):
-    """单测 43：同一端口连续 GET 两次 → 两个 sid 都有效，不互相作废。"""
+    """单测 43（V47）：同一端口连续 GET 两次 → 两个 sid 都有效，不互相作废。"""
 
     def test_43_two_sids_coexist(self):
         scan = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
@@ -1407,7 +1408,7 @@ class Test43MultiSid(ServerCase):
         st, obj2 = http_req("GET", "/api/v1/agent/ports?port=3084", None, AGENT_HDR)
         sid_b = obj2["items"][0]["snapshot_id"]
         self.assertNotEqual(sid_a, sid_b)
-        # 按 sid 存后：两个 sid 都能通过 verify（对同一目标身份）
+        # B3 后按 sid 存：两个 sid 都能通过 verify（对同一目标身份）
         identity = {"port": 3084, "pid": 1234, "proc": "python.exe",
                     "started": "2026-11-01T10:00:00+08:00"}
         self.assertEqual(pc.verify_snapshot_id(self.h.state, 3084, sid_a, identity), "")
@@ -1420,14 +1421,14 @@ class Test43MultiSid(ServerCase):
 
 
 class Test44FakeSidNoCollateral(ServerCase):
-    """单测 44：假 sid 不 pop 有效 sid。"""
+    """单测 44（V48）：假 sid 不 pop 有效 sid。"""
     SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
 
     def test_44_fake_sid_leaves_valid_sid_usable(self):
         pc.scan_snapshot = lambda: self.SCAN
         st, obj = http_req("GET", "/api/v1/agent/ports?port=3084", None, AGENT_HDR)
         sid = obj["items"][0]["snapshot_id"]
-        # 假 sid 打同端口（旧逻辑：会把有效指纹 pop 掉）
+        # 假 sid 打同端口（B3 前：会把有效指纹 pop 掉）
         st, obj = http_req("POST", "/api/v1/agent/kill-by-port",
                            {"port": 3084, "snapshot_id": "sn_deadbeef", "confirm": True}, AGENT_HDR)
         self.assertEqual((st, obj["reason"]), (400, "target_identity_required"))
@@ -1440,10 +1441,10 @@ class Test44FakeSidNoCollateral(ServerCase):
 
 
 class Test45ExeUnreadableFailClosed(ServerCase):
-    """单测 45：exe 读不到 → fail closed；正常 exe 进程不误伤。"""
+    """单测 45（V49/V50）：exe 读不到 → fail closed；正常 exe 进程不误伤。"""
 
     def test_45a_exe_empty_protected(self):
-        # 场景（实测数据 MSI.TerminalServer）：exe 空 + session 1 + 不在保护表
+        # B4 场景（真机实测 MSI.TerminalServer）：exe 空 + session 1 + 不在保护表
         scan = make_scan([conn("0.0.0.0", 26822, 17060)],
                          [proc(17060, name="MSI.TerminalServer.exe", exe="", cmdline="svc")],
                          {"17060": 1})
@@ -1465,8 +1466,8 @@ class Test45ExeUnreadableFailClosed(ServerCase):
             self.assertEqual(st, 200)
 
     def test_45c_started_unreadable_fail_closed(self):
-        """安全审查建议（安全审查）：started 读不到 → fail closed。
-        三层验证：protection_reason 函数级 403 语义；strict 层 started 校验先拦 409（目标侧
+        """复核建议（复核方方案乙）：started 读不到 → fail closed。
+        三层验证：protection_reason 函数级 403 语义；strict 层 B2 先拦 409（目标侧
         started 空→无法确认身份）；列表层 kill_allowed=false＋不发指纹（503 语义
         只留给存储满）。"""
         scan = make_scan([conn("0.0.0.0", 26823, 17061)],
@@ -1478,12 +1479,15 @@ class Test45ExeUnreadableFailClosed(ServerCase):
                  "exe": r"C:\tools\nosvc.exe", "session_id": 1, "started": ""}
         self.assertEqual(pc.protection_reason(self.h.state, entry),
                          "启动时间不可读(fail closed)")
-        # strict 层：目标 started 空 → fail closed 先拦（409，非 403）
+        # strict 层：目标 started 空 → B2 fail closed 先拦（409，非 403）
         with mock.patch.object(pc, "run_taskkill", return_value=(True, "")) as tk:
             st, obj = http_req("POST", "/api/v1/agent/kill",
                                kill_body(port=26823, pid=17061, proc_name="nosvc.exe",
                                          started="2020-01-01T00:00:00+08:00"), AGENT_HDR)
-            self.assertEqual((st, obj["reason"]), (409, "target_identity_required"))
+            # 1.2 改-6 文案分流（设计变更驱动改断言，非凑绿）：目标 started
+            # 读不到 → unavailable（fail-closed 语义不变：仍 409 拒杀、tk 不触发）
+            self.assertEqual((st, obj["reason"]),
+                             (409, "target_identity_unavailable"))
             tk.assert_not_called()
         # 列表层：kill_allowed=false（带保护原因）＋不发指纹（绝不 503）
         st, obj = http_req("GET", "/api/v1/agent/ports?port=26823", None, AGENT_HDR)
@@ -1495,7 +1499,7 @@ class Test45ExeUnreadableFailClosed(ServerCase):
 
 
 class Test46RedactCoverage(unittest.TestCase):
-    """单测 46：脱敏覆盖下划线复合词与 Bearer JWT。"""
+    """单测 46（V51）：脱敏覆盖下划线复合词与 Bearer JWT。"""
 
     def test_46_underscore_compounds_and_bearer(self):
         cases = [
@@ -1508,14 +1512,14 @@ class Test46RedactCoverage(unittest.TestCase):
             out = pc.redact_cmdline(raw)
             self.assertNotIn(secret, out, raw)
             self.assertIn("***", out, raw)
-        # Bearer JWT：令牌本体不残留（判据=值全部 ***，JWT 不残留；
+        # Bearer JWT：令牌本体不残留（V51 判据=值全部 ***，JWT 不残留；
         # 双闸各打一道，输出形如 "Authorization: *** ***" 亦满足）
         jwt = "eyJhbGciOiJIUzI1NiJ9.abc.defghi"
         out = pc.redact_cmdline("Authorization: Bearer " + jwt)
         self.assertNotIn(jwt, out)
         self.assertNotIn("eyJ", out)
         self.assertIn("***", out)
-        # 安全审查建议 4：样本从"实现没提到的"里挑，防测试与实现同盲区
+        # 复核建议 4：样本从"实现没提到的"里挑，防测试与实现同盲区
         extra_leak = [
             ("MY_SECRET_VALUE=abc", "abc"),
             ("my_secret_value=abc", "abc"),
@@ -1532,7 +1536,7 @@ class Test46RedactCoverage(unittest.TestCase):
 
 
 class Test52RateLimitAtomic(ServerCase):
-    """单测：频率闸原子化——并发穿透不可能。"""
+    """单测（V52）：频率闸原子化——并发穿透不可能。"""
 
     def test_52_concurrent_only_six_pass(self):
         import threading
@@ -1554,7 +1558,7 @@ class Test52RateLimitAtomic(ServerCase):
 
 
 class Test53KilledRealValues(ServerCase):
-    """单测：killed 数组填每个成员的真实 proc/started（非根进程值）。"""
+    """单测（V53）：killed 数组填每个成员的真实 proc/started（非根进程值）。"""
 
     def test_53_killed_has_per_member_truth(self):
         scan = make_scan(
@@ -1576,7 +1580,7 @@ class Test53KilledRealValues(ServerCase):
 
 
 # ----------------------------------------------------------------------------
-# 1.1 1.0.1 追加 54-68（只追加，不改原 52 个断言）
+# T-PORT-004 1.0.1 追加 54-68（R3 方案 §六映射；只追加，不改原 52 个断言）
 # ----------------------------------------------------------------------------
 
 _PKG = Path(pc.__file__).resolve().parent          # 工程包目录（单测 59 读知识库文件）
@@ -1593,7 +1597,7 @@ def _plain_proc(pid, ppid, started, name="x.exe"):
 
 
 class Test54CacheNeverInKill(ServerCase):
-    """单测 54：缓存躺旧身份，kill 拿新扫描——缓存数据流进 kill 路径即 500。"""
+    """单测 54（V54）：缓存躺旧身份，kill 拿新扫描——缓存数据流进 kill 路径即 500。"""
 
     SCAN = make_scan([conn("0.0.0.0", 3084, 100)],
                      [proc(100, name="target.exe",
@@ -1615,7 +1619,7 @@ class Test54CacheNeverInKill(ServerCase):
 
 
 class Test55CachedFlagRejected(ServerCase):
-    """单测 55：kill 路径拿到 _cached 数据 → RuntimeError → 500，不执行关闭。"""
+    """单测 55（V55）：kill 路径拿到 _cached 数据 → RuntimeError → 500，不执行关闭。"""
 
     SCAN = make_scan([conn("0.0.0.0", 3084, 100)],
                      [proc(100, started="2026-11-01T10:00:00+08:00")], {"100": 1})
@@ -1635,7 +1639,7 @@ class Test55CachedFlagRejected(ServerCase):
 
 
 class Test56PostKillFreshRescan(ServerCase):
-    """单测 56：杀后必须再跑一次全表新鲜扫描（不复用杀前快照）。"""
+    """单测 56（V56）：杀后必须再跑一次全表新鲜扫描（不复用杀前快照）。"""
 
     def test_56_scan_after_kill_present(self):
         scan = make_scan([conn("0.0.0.0", 3084, 100)],
@@ -1670,26 +1674,25 @@ class Test56PostKillFreshRescan(ServerCase):
 
 
 class Test57RulesOrderAndMsi(ServerCase):
-    """单测 57：wechat-work(order 2) 先于 doubao(24) 不被抢；msi.terminalserver 命中。"""
+    """单测 57（V60+V60b）：doubao 规则命中；msi.terminalserver 命中。"""
 
     EXTRA = {"rules": _rules21()}
 
     def test_57_doubao_priority_and_msi(self):
         st = self.h.state
         e = {"port": 1, "addr": "0.0.0.0", "pid": 2, "proc": "node.exe", "exe": "",
-             "cmdline": r"D:\dsh\wechat-work\run.exe --serve", "started": "s",
+             "cmdline": r"D://doubao//doubao.exe --serve", "started": "s",
              "session_id": 1}
-        self.assertEqual(pc.classify_entry(st, e)["name"], "企业微信")
-        self.assertNotEqual(pc.classify_entry(st, e)["name"], "豆包客户端")
+        self.assertEqual(pc.classify_entry(st, e)["name"], "豆包客户端")   # V60
         m = {"port": 26822, "addr": "0.0.0.0", "pid": 3,
              "proc": "MSI.TerminalServer.exe",
              "exe": r"D:\MSI\MSI.TerminalServer.exe", "cmdline": "",
              "started": "s", "session_id": 1}
-        self.assertEqual(pc.classify_entry(st, m)["name"], "MSI主板工具")
+        self.assertEqual(pc.classify_entry(st, m)["name"], "MSI主板工具")   # V60b
 
 
 class Test58PortsJsonNotInVerdict(ServerCase):
-    """单测 58：ports.json 是纯知识层——存在与否 kill_allowed/protected_reason 不变。"""
+    """单测 58（V61）：ports.json 是纯知识层——存在与否 kill_allowed/protected_reason 不变。"""
 
     def test_58_verdict_unchanged_with_and_without_ports_json(self):
         scan = make_scan([conn("0.0.0.0", 3084, 100)],
@@ -1711,9 +1714,9 @@ class Test58PortsJsonNotInVerdict(ServerCase):
 
 
 class Test59PortsMdStats(unittest.TestCase):
-    """单测 59：ports.md 统计与 ports.json 全对（111 条）。"""
+    """单测 59（V62）：ports.md 统计与 ports.json 全对（108 条）。"""
 
-    def test_59_stats_111_and_categories_match(self):
+    def test_59_stats_and_categories_match(self):
         data = json.loads((_PKG / "ports.json").read_text(encoding="utf-8"))
         items = data["ports"]
         self.assertEqual(len(items), 108)
@@ -1747,7 +1750,7 @@ class Test59PortsMdStats(unittest.TestCase):
 
 
 class Test60BuildTreeSessionFilter(unittest.TestCase):
-    """单测 60：全表快照内存构树＋剔除；查询命令失败 fail closed。"""
+    """单测 60（V63）：全表快照内存构树＋剔除；查询命令失败 fail closed。"""
 
     def test_60a_drop_exited_from_snapshot_tree(self):
         procs = {100: _plain_proc(100, 0, "2026-11-01T09:00:00+08:00", "root.exe"),
@@ -1771,7 +1774,7 @@ class Test60BuildTreeSessionFilter(unittest.TestCase):
 
 
 class _TreeStateBase(unittest.TestCase):
-    """公共底座：函数级 state + 造扫描。"""
+    """V64-V70 公共底座：函数级 state + 造扫描。"""
 
     def setUp(self):
         self.state = pc.AppState(Path(tempfile.mkdtemp(prefix="pcon-t64-")),
@@ -1804,7 +1807,7 @@ class _TreeStateBase(unittest.TestCase):
 
 
 class Test61StartedRequired(_TreeStateBase):
-    """单测 61：子树成员 started 必填三态（H1 全有/H2 空/H3 缺键）。"""
+    """单测 61（V64-V66）：子树成员 started 必填三态（H1 全有/H2 空/H3 缺键）。"""
 
     def test_61_h1_all_started_ok(self):
         scan = self._scan()
@@ -1829,7 +1832,7 @@ class Test61StartedRequired(_TreeStateBase):
 
 
 class Test62SessionVerdicts(_TreeStateBase):
-    """单测 62：I1 全员带 session_id → 放行；I2 人还在但会话读不到 → 拒。"""
+    """单测 62（V67-V68）：I1 全员带 session_id → 放行；I2 人还在但会话读不到 → 拒。"""
 
     def test_62_i1_all_sessions_ok(self):
         scan = self._scan()
@@ -1847,7 +1850,7 @@ class Test62SessionVerdicts(_TreeStateBase):
 
 
 class Test63GoneVsAlive(ServerCase):
-    """单测 63：人没了剔（受保护成员也不连坐）；人还在但读不到 → 拒。"""
+    """单测 63（V69-V70）：人没了剔（受保护成员也不连坐）；人还在但读不到 → 拒。"""
 
     def test_63_i3_gone_member_dropped(self):
         scan = make_scan([conn("0.0.0.0", 3084, 100)],
@@ -1856,7 +1859,7 @@ class Test63GoneVsAlive(ServerCase):
                           proc(101, name="dllhost.exe", ppid=100,
                                exe=r"C:\Windows\System32\dllhost.exe",
                                started="2026-11-01T10:00:01+08:00")],
-                         {"100": 1})            # 101 无键 = 刚退出
+                         {"100": 1})            # 101 无键 = 刚退出（判据 2）
         pc.scan_snapshot = lambda: scan
         with self.h.mock_kill(scan):
             st, obj = http_req("POST", "/api/v1/agent/kill",
@@ -1871,7 +1874,7 @@ class Test63GoneVsAlive(ServerCase):
                           proc(101, name="dllhost.exe", ppid=100,
                                exe=r"C:\Windows\System32\dllhost.exe",
                                started="2026-11-01T10:00:01+08:00")],
-                         {"100": "1", "101": None})   # 人还在，会话读不到
+                         {"100": "1", "101": None})   # 人还在，会话读不到（判据 3）
         pc.scan_snapshot = lambda: scan
         st, obj = http_req("POST", "/api/v1/agent/kill",
                            kill_body(pid=100, proc_name="root.exe",
@@ -1881,7 +1884,7 @@ class Test63GoneVsAlive(ServerCase):
 
 
 class Test64BuildTreeDirect(unittest.TestCase):
-    """单测 64（三态）：直接调 build_tree_with_session_filter 断言输出树。"""
+    """单测 64（V71 + 备注 3 三态）：直接调 build_tree_with_session_filter 断言输出树。"""
 
     def test_64_i5_and_ppid_reuse_three_states(self):
         root = _plain_proc(100, 0, "2026-11-01T09:00:00+08:00", "root.exe")
@@ -1920,7 +1923,7 @@ class Test64BuildTreeDirect(unittest.TestCase):
 
 
 class Test65CacheReverseLeak(ServerCase):
-    """单测 65：缓存反向泄漏——定向扫描不写缓存，GET /ports 仍全表。"""
+    """单测 65（V72）：缓存反向泄漏——定向扫描不写缓存，GET /ports 仍全表。"""
 
     SCAN = make_scan([conn("0.0.0.0", 3084, 100), conn("0.0.0.0", 3085, 200)],
                      [proc(100, name="a.exe"), proc(200, name="b.exe")],
@@ -1954,7 +1957,7 @@ class Test65CacheReverseLeak(ServerCase):
 
 
 class Test66RefreshBypass(ServerCase):
-    """单测 66：?refresh=1 绕过缓存强制新鲜扫描，且刷新结果回写缓存。"""
+    """单测 66（V73）：?refresh=1 绕过缓存强制新鲜扫描，且刷新结果回写缓存。"""
 
     SCAN = make_scan([conn("0.0.0.0", 3084, 100)],
                      [proc(100, name="old.exe", started="2026-11-01T10:00:00+08:00")],
@@ -1970,7 +1973,7 @@ class Test66RefreshBypass(ServerCase):
         with mock.patch.object(pc, "scan_snapshot", lambda: new_scan):
             st2, obj2 = http_req("GET", "/api/v1/ports?refresh=1", None, AGENT_HDR)
             self.assertEqual(st2, 200)
-            self.assertFalse(obj2["data_cached"])            # 强制新鲜
+            self.assertFalse(obj2["data_cached"])            # 强制新鲜（V73）
             self.assertEqual(obj2["items"][0]["proc"], "new.exe")
             st3, obj3 = http_req("GET", "/api/v1/ports", None, AGENT_HDR)
             self.assertTrue(obj3["data_cached"])             # 刷新后缓存已回写
@@ -1978,15 +1981,19 @@ class Test66RefreshBypass(ServerCase):
 
 
 class Test67ProtectionListenerSource(ServerCase):
-    """单测 67（mock 层）：/protection 换 GetActiveTcpListeners 数据源，语义不变。"""
+    """单测 67（V74 mock 层）：/protection 换 GetActiveTcpListeners 数据源，语义不变。"""
 
     def test_67_active_history_and_scanerror(self):
+        # 1.2 改-3 设计变更：3999 移出静态保护表（本体端口流动顺延，静态表只会
+        # 误护后来的占用者）；发布轨保护表只有 6 个系统端口（单测 74 锁定与文件一致）：
+        # mock 在听 135/445/3999 → 3999 已不在保护表，active 只含 135/445
         with mock.patch.object(pc, "scan_listen_ports",
                                return_value={135, 445, 3999}):
             st, obj = http_req("GET", "/api/v1/protection", None, AGENT_HDR)
         self.assertEqual(st, 200)
         self.assertEqual(obj["active_ports"], [135, 445])
-        self.assertEqual(obj["history_ports"], [139, 3389, 5985, 5986])
+        self.assertEqual(obj["history_ports"],
+                         [139, 3389, 5985, 5986])
         with mock.patch.object(pc, "scan_listen_ports",
                                side_effect=pc.ScanError("ps 爆了")):
             st2, obj2 = http_req("GET", "/api/v1/protection", None, AGENT_HDR)
@@ -1994,17 +2001,316 @@ class Test67ProtectionListenerSource(ServerCase):
         self.assertEqual(obj2["reason"], "scan_failed")
 
 
+# 单测 71（1.2 选题①）：DSH 壳端口发现——顺探 3999-4098，与本体顺延范围一致
+class Test71DshShellPortDiscovery(unittest.TestCase):
+    def test_71_shell_probes_full_range(self):
+        shell = (_PKG / "packages" / "dsh-portwrench" / "lib" / "index.mjs").read_text(
+            encoding="utf-8")
+        # 不再硬编码单地址常量（旧版 const PW = 'http://127.0.0.1:3999'）
+        self.assertNotIn("const PW = 'http://127.0.0.1:3999'", shell)
+        # 探活区间末位必须与本体顺延范围严格对齐（3999 起 100 个 → 4098）
+        self.assertEqual(pc.DEFAULT_PORT + pc.PORT_SCAN_RANGE - 1, 4098)
+        self.assertIn("PW_BASE = 3999", shell)
+        self.assertIn("PW_MAX = 4098", shell)
+        # 探的是 health（唯一开放 CORS 的端点），不是列表
+        self.assertIn("/api/v1/health", shell)
+        self.assertNotIn("/api/v1/ports", shell)
+        # 并发探活 + 单口超时：不许逐端口串行（最坏 100 × 超时）
+        self.assertIn("Promise.all", shell)
+        self.assertIn("AbortController", shell)
+        # 只嵌回环
+        self.assertIn("http://127.0.0.1:' + port", shell)
+
+    def test_71b_shell_verifies_health_body(self):
+        """1.2 改-10（M-06 净增量）：壳探活必须校验响应体，不能只判 r.ok。
+        3999-4098 是本体顺延区间，这一段里任何别的服务/dev server 返回 200
+        都会被旧逻辑当成本体嵌进来——错认人。判据两条：
+          ① 正常路径：源码里出现 api_version 校验（见下方 assertIn）；
+          ② 反例锁：把 probe 退回只判 r.ok，本测试必须变红（assertNotIn 那句）。"""
+        shell = (_PKG / "packages" / "dsh-portwrench" / "lib" / "index.mjs").read_text(
+            encoding="utf-8")
+        # ① 必须读 body 并校验 api_version
+        self.assertIn("api_version", shell)
+        self.assertIn(".json()", shell)
+        self.assertIn("'v1'", shell)
+        # ② 反例锁：旧的「只判 r.ok 就认人」写法必须已消失。
+        #    把它改回去 → 这句 assertNotIn 立刻红。
+        self.assertNotIn("return r.ok ? port : 0;", shell)
+        # 壳版本必须已升（0.1.2 = 带 body 校验的那版）
+        pkg = json.loads((_PKG / "packages" / "dsh-portwrench" / "package.json")
+                         .read_text(encoding="utf-8"))
+        self.assertEqual(pkg["version"], "0.1.2")
+
+
 class Test70HealthCors(ServerCase):
     """单测 70（1.1 DSH 壳配套）：health 开放 CORS 供壳页跨源探活；
-    其余端点必须不开——不给恶意网页跨源枚举本机端口的口子。"""
+    其余端点必须不开——不给恶意网页跨源枚举本机端口的口子。
+    1.2 改-1/改-2：agent/ports 对跨源进一步收紧为 403（补 70b/70c/70d）。"""
 
     def test_70_health_cors_open_others_not(self):
         st, head, _ = http_req_raw("GET", "/api/v1/health", headers={"Origin": "http://127.0.0.1:3080"})
         self.assertEqual(st, 200)
         self.assertIn("access-control-allow-origin: *", head.lower())
         st2, head2, _ = http_req_raw("GET", "/api/v1/agent/ports", headers={"Origin": "http://127.0.0.1:3080"})
-        self.assertEqual(st2, 200)
+        # 1.2 改-2：异源 Origin 是跨源证据②，agent/ports 直接 403。
+        # 403＋无 ACAO 是比「200＋无 ACAO」更强的拒绝姿态——这是收紧，不是放松 L1 边界。
+        self.assertEqual(st2, 403)
         self.assertNotIn("access-control-allow-origin", head2.lower())
+
+    def test_70b_no_origin_no_sfs_still_200(self):
+        """改-2 反例锁（判据第二条）：无 Origin 无 SFS 的本机程序（portctl/验收/AI
+        脚本）必须仍 200——这是 CLI 取指纹的命脉。若谓词被歪改成「无证据即拒」
+        （复用 authorize_ui_request 的语义），本条立即变红。"""
+        st, obj = http_req("GET", "/api/v1/agent/ports")
+        self.assertEqual(st, 200)
+        self.assertTrue(obj["ok"])
+        self.assertFalse(obj.get("authenticated"))
+        # 带 token 的同一端点：authenticated=True（1.2 改-2 新增字段，调用方自辨语义）
+        st, obj = http_req("GET", "/api/v1/agent/ports", None, AGENT_HDR)
+        self.assertEqual(st, 200)
+        self.assertTrue(obj.get("authenticated"))
+
+    def test_70c_sfs_whitelist_four_values(self):
+        """改-1 判据：SFS 四值全谱——白名单 {same-origin, none} 放行，
+        {cross-site, same-site} 拒。same-site 是 1.2 交叉审抓到的漏放洞：
+        site=(scheme,host) 不含端口，本机各 web 服务与本体互为同站异源，
+        且 <img> 只发 SFS 不发 Origin——黑名单式（只认 cross-site）放不住它。
+        反例锁：谓词改回只认 "cross-site"，same-site 格变红；
+        把 none 移出白名单，none 格变红。"""
+        st, _o = http_req("GET", "/api/v1/agent/ports",
+                          None, {"Sec-Fetch-Site": "cross-site"})
+        self.assertEqual(st, 403)                        # 跨源证据①
+        st, _o = http_req("GET", "/api/v1/agent/ports",
+                          None, {"Sec-Fetch-Site": "same-site"})
+        self.assertEqual(st, 403)                        # 1.2 修的洞：同站异源
+        st, _o = http_req("GET", "/api/v1/agent/ports",
+                          None, {"Sec-Fetch-Site": "none"})
+        self.assertEqual(st, 200)                        # 地址栏直达放行（裁定 §5.1）
+        st, _o = http_req("GET", "/api/v1/agent/ports",
+                          None, {"Sec-Fetch-Site": "same-origin"})
+        self.assertEqual(st, 200)                        # 同源 fetch 放行
+
+    def test_70d_agent_gate_limits(self):
+        """改-2 限流闸单元锁：匿名 30/min（第 31 次 False→429）、token 档独立计数、
+        在飞并发 2（第 3 个 False→503，leave 后可再进）。"""
+        gate = pc._AgentPortsGate()
+        for _ in range(pc.AGENT_PORTS_RATE_ANON):
+            self.assertTrue(gate.try_acquire(False))
+        self.assertFalse(gate.try_acquire(False))        # 匿名超限 → 429
+        self.assertTrue(gate.try_acquire(True))          # token 档独立窗口
+        self.assertTrue(gate.try_enter_inflight())
+        self.assertTrue(gate.try_enter_inflight())
+        self.assertFalse(gate.try_enter_inflight())      # 在飞满 → 503
+        gate.leave_inflight()
+        self.assertTrue(gate.try_enter_inflight())       # 释放后可再进
+
+
+# ============================================================================
+# 1.2 选题③：死代码清理 + 审计 started/finished 成对收口（单测 75-76）
+# （插在 Test70 与 Test69 之间：内部锚点，三份补丁可任意顺序连打）
+# ============================================================================
+
+
+class Test75DeadCodeRemoved(unittest.TestCase):
+    def test_75_old_rate_limit_helpers_gone(self):
+        src = Path(pc.__file__).read_text(encoding="utf-8")
+        # S1 原子化之前的旧助手已无任何调用方（grep 全仓只剩定义）
+        self.assertNotIn("def check_kill_rate_limit", src)
+        self.assertNotIn("def record_kill_rate", src)
+        # 原子闸本体必须还在
+        self.assertIn("def try_consume_rate_slot", src)
+
+
+class Test76AuditPairedOnBoundaryError(ServerCase):
+    """单测 76：杀前复核（Win32 边界）抛异常时，started 必须有 finished 配对。
+    真实 kill_audit.jsonl 里出现过 started 后无 finished 的悬空记录。"""
+
+    SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
+
+    def test_76_prekill_recheck_exception_pairs_finished(self):
+        pc.scan_snapshot = lambda: self.SCAN
+        with mock.patch.object(pc, "run_taskkill", return_value=(True, "")) as tk, \
+             mock.patch.object(pc, "pid_matches_start",
+                               side_effect=RuntimeError("boom")):
+            st, obj = http_req("POST", "/api/v1/agent/kill", kill_body(), AGENT_HDR)
+        self.assertEqual(st, 500)
+        self.assertEqual(obj["reason"], "internal_error")
+        tk.assert_not_called()
+        ev = self.h.audit_lines()
+        self.assertTrue(any(e.get("action") == "started"
+                            and e.get("mode") == "taskkill_tree" for e in ev))
+        fin = [e for e in ev if e.get("action") == "finished"]
+        self.assertTrue(fin, "started 之后必须补 finished，不许悬空")
+        self.assertEqual(fin[-1]["result"], "failed")
+        self.assertIn("internal_error", fin[-1]["reason"])
+
+
+class Test77SystemRuleProcOnly(unittest.TestCase):
+    """单测 77（1.2 改-4 甲案）：level=system 兜底规则只用 proc 名匹配、不看 cmdline。
+    AI 程序命令行带 --system-prompt 是家常便饭——旧拼接匹配（cmdline+proc）会把任意
+    带该参数的进程误标 system 级 403 硬拒（AI 通道带正确 token 也杀不动）。
+    反例锁：把甲案分支改回拼接匹配 ⇒ 77a/77b/78 变红。"""
+
+    @staticmethod
+    def _state():
+        return types.SimpleNamespace(
+            rules=pc.validate_rules(pc.DEFAULT_RULES), port_map={})
+
+    def test_77a_conhost_cmdline_not_system(self):
+        # 真机样本（工单改-4 判据一）：conhost 的 cmdline 含
+        # \??\C:\Windows\system32\... —— "system" 子串命中旧拼接匹配
+        # （小深定量：误命中 59 个全是 conhost/broker/驱动助手，都不监听端口）；
+        # 甲案后只看 proc 名，不得为 system
+        st = self._state()
+        cls = pc.classify_entry(st, {
+            "port": 45010, "addr": "0.0.0.0", "pid": 801,
+            "proc": "conhost.exe", "exe": r"C:\Windows\system32\conhost.exe",
+            "cmdline": r"\??\C:\Windows\system32\conhost.exe 0x4",
+            "started": "s", "session_id": 1})
+        self.assertNotEqual(cls["level"], "system")
+        self.assertEqual(cls["source"], "unknown")
+
+    def test_77b_ai_system_prompt_flag_not_system(self):
+        # 构造样本（工单改-4 判据二）：python app.py --system-prompt=x
+        # —— 修前命中 "System"(order 91) → level=system → 403 硬拒；修后非系统级
+        # （API 级可杀验证在 Test78）
+        st = self._state()
+        cls = pc.classify_entry(st, {
+            "port": 45011, "addr": "0.0.0.0", "pid": 802,
+            "proc": "python.exe", "exe": r"C:\Python\python.exe",
+            "cmdline": "python app.py --system-prompt=x",
+            "started": "2026-11-01T10:00:00+08:00", "session_id": 1})
+        self.assertNotEqual(cls["level"], "system")
+
+    def test_77c_real_system_processes_still_protected(self):
+        # 反向验（工单改-4）：真 System（PID 4，cmdline 为空）、svchost、lsass
+        # 仍必须 system 级——别为了放开把真系统进程也放了
+        st = self._state()
+        for name, cmdline in (("System", ""),
+                              ("svchost.exe", "svchost.exe -k netsvcs"),
+                              ("lsass.exe", r"C:\Windows\system32\lsass.exe")):
+            cls = pc.classify_entry(st, {
+                "port": 45012, "addr": "0.0.0.0", "pid": 4,
+                "proc": name, "exe": "", "cmdline": cmdline,
+                "started": "s", "session_id": 0})
+            self.assertEqual(cls["level"], "system", f"{name} 必须仍是系统级")
+
+
+class Test78AiPromptFlagKillable(ServerCase):
+    """单测 78（1.2 改-4 判据二 API 级）：cmdline 带 --system-prompt 的监听进程
+    修后可正常走 agent/kill 全链（修前 level=system → check_protection 403 硬拒）。
+    反例锁：甲案分支改回拼接匹配 ⇒ 本条变 403。"""
+
+    SCAN = make_scan(
+        [conn("0.0.0.0", 45013, 803)],
+        [proc(803, cmdline="python app.py --system-prompt=x",
+              started="2026-11-01T10:00:00+08:00")],
+        {"803": 1})
+
+    def test_78_kill_ai_prompt_process(self):
+        # 完整杀链 mock 面：杀前快照 → 杀后快照（目标已退）按调用序切换；
+        # 存活轮询/杀前复核/taskkill 全部替身（真机链路归 21 步验收）。
+        scan_after = make_scan([], [], {})
+        calls = {"n": 0}
+
+        def fake_scan():
+            calls["n"] += 1
+            return self.SCAN if calls["n"] == 1 else scan_after
+
+        with mock.patch.object(pc, "scan_snapshot", side_effect=fake_scan), \
+             mock.patch.object(pc, "run_taskkill", return_value=(True, "")), \
+             mock.patch.object(pc, "pid_matches_start", return_value=True), \
+             mock.patch.object(pc, "wait_tree_exit", return_value=set()):
+            st, obj = http_req("POST", "/api/v1/agent/kill",
+                               kill_body(port=45013, pid=803,
+                                         started="2026-11-01T10:00:00+08:00"),
+                               AGENT_HDR)
+        self.assertEqual(st, 200)
+        self.assertTrue(obj.get("ok"))
+
+
+class Test79PortMapFieldLength(unittest.TestCase):
+    """单测 79（1.2 改-5，R0 F5 后半）：port_map 的 proc/started 超长在加载处
+    ConfigError 拦下（name 原有 1..80 校验，proc/started 原先不设防——手工编辑
+    塞进来的垃圾串会一路带进 classify_entry 与 fill_mapping_fingerprint）。
+    反例锁：删掉两段长度校验 ⇒ 79a/79b 变红。"""
+
+    def test_79a_overlong_proc_rejected(self):
+        with self.assertRaises(pc.ConfigError):
+            pc.validate_port_map({"3084": {"name": "信箱", "proc": "x" * 261}})
+
+    def test_79b_overlong_started_rejected(self):
+        with self.assertRaises(pc.ConfigError):
+            pc.validate_port_map({"3084": {"name": "信箱", "started": "2" * 65}})
+
+    def test_79c_boundary_values_accepted(self):
+        out = pc.validate_port_map({
+            "3084": {"name": "信箱", "level": "other", "proc": "p" * 260,
+                     "started": "2026-11-01T10:00:00+08:00"}})
+        self.assertEqual(out["3084"]["proc"], "p" * 260)
+        self.assertEqual(out["3084"]["started"], "2026-11-01T10:00:00+08:00")
+
+
+class Test80StartedSourceSwap(unittest.TestCase):
+    """单测 80（1.2 改-6）：快照 started 主源换 Get-Process.StartTime——
+    CIM CreationDate 交付机仅 28/233 可读，Get-Process 233/233 残差 0
+    （工单改-6 三家对照：缺口是权限相关不是测量误差）。静态契约：
+    主源/回退/格式三要素齐、主源先于回退。
+    真机项（U1，224 上必须普通权限跑）：对拍精度＋可读率＋读不到者的会话分布。"""
+
+    def test_80_snapshot_script_source_order(self):
+        src = pc.PS_SNAPSHOT_SCRIPT
+        # 主源：Get-Process.StartTime → pid 映射
+        self.assertIn("$startTimeMap = @{}", src)
+        self.assertIn("Get-Process", src)
+        self.assertIn('$gp.StartTime.ToString("yyyy-MM-ddTHH:mm:sszzz")', src)
+        # 回退：CIM CreationDate 仅在 startTimeMap 查不到时使用（次序锁；
+        # rindex——注释里的 "CIM CreationDate" 提及在前，代码回退行在后）
+        self.assertIn("CreationDate", src)
+        self.assertLess(src.index("startTimeMap[[string]$p.ProcessId]"),
+                        src.rindex("CreationDate"))
+        # 格式锁：两种源同格式（本地时间秒级）——pid_matches_start 第③关按
+        # started[:19] 比对，消费方零改动；ToString( 形式恰好主源+回退两处
+        self.assertEqual(src.count('ToString("yyyy-MM-ddTHH:mm:sszzz")'), 2)
+
+
+class Test81IdentityUnavailableCopy(ServerCase):
+    """单测 81（1.2 改-6 文案分流）：目标 started 不可读（ticks 缺失）与
+    请求没带 sid 必须两种 reason——旧文案混用会让 AI 陷入
+    「取不到指纹→照文案再查→再 400」的死循环（工单改-6 净影响实证）。
+    反例锁：删掉分流分支 ⇒ 81a/81c 变红（unavailable 退回 required）。"""
+
+    SCAN_NO_TICKS = make_scan(
+        [conn("0.0.0.0", 3084, 1234)],
+        [proc(1234, started="")],          # started 空 = ticks 不可读
+        {"1234": 1})
+    SCAN_OK = make_scan(
+        [conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
+
+    def test_81a_by_port_no_sid_no_ticks(self):
+        pc.scan_snapshot = lambda: self.SCAN_NO_TICKS
+        st, obj = http_req("POST", "/api/v1/agent/kill-by-port",
+                           {"port": 3084, "confirm": True}, AGENT_HDR)
+        self.assertEqual(st, 400)
+        self.assertEqual(obj["reason"], "target_identity_unavailable")
+
+    def test_81b_by_port_no_sid_with_ticks_still_requires_sid(self):
+        # 反例锁：目标 started 正常时，无 sid 仍是 target_identity_required——
+        # 两种文案不许混用
+        pc.scan_snapshot = lambda: self.SCAN_OK
+        st, obj = http_req("POST", "/api/v1/agent/kill-by-port",
+                           {"port": 3084, "confirm": True}, AGENT_HDR)
+        self.assertEqual(st, 400)
+        self.assertEqual(obj["reason"], "target_identity_required")
+
+    def test_81c_strict_no_ticks(self):
+        # strict body 的 started 必填（parse 层 400），这里带正常 started、
+        # 让「目标 started 不可读」从扫描侧触发（SCAN_NO_TICKS 的 target started=""）
+        pc.scan_snapshot = lambda: self.SCAN_NO_TICKS
+        st, obj = http_req("POST", "/api/v1/agent/kill",
+                           kill_body(), AGENT_HDR)
+        self.assertEqual(st, 409)
+        self.assertEqual(obj["reason"], "target_identity_unavailable")
 
 
 class Test69ConsoleSelfRule(ServerCase):
@@ -2024,8 +2330,161 @@ class Test69ConsoleSelfRule(ServerCase):
         self.assertEqual(cls["source"], "auto")
 
 
+# ============================================================================
+# 1.2 选题②：GET 副作用收口 + unknown 台账过滤 + 默认值回填（单测 72-74）
+# （插在 Test69 与 Test68 之间：此处为内部锚点，三份补丁可任意顺序连打）
+# ============================================================================
+
+
+class Test72UnknownLedgerFilter(unittest.TestCase):
+    """单测 72：台账只留真·未知的可操作目标。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="pcon-72-"))
+        self.state = pc.AppState(
+            self.tmp,
+            {"rules": pc.validate_rules(pc.DEFAULT_RULES),
+             "protection": pc.validate_protection(pc.DEFAULT_PROTECTION),
+             "port_map": {}, "unknown": [], "warnings": []},
+            3999, "t", True)
+        self.state.console_pid = 999999
+        self.state.console_port = 3999
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _build(self, scan):
+        return pc.build_full_entries(self.state, pc.normalize_snapshot(scan),
+                                     record_unknowns=True)
+
+    def test_72a_protected_unknown_not_recorded(self):
+        # 识别为 unknown 但 Session 0 → reason 非空（受保护）：不记账
+        scan = make_scan(
+            [conn("0.0.0.0", 45001, 701)],
+            [proc(701, name="weird-svc.exe",
+                  exe=r"C:\Windows\System32\weird-svc.exe")],
+            {"701": 0})
+        items = self._build(scan)
+        self.assertEqual(items[0]["source"], "unknown")
+        self.assertFalse(items[0]["kill_allowed"])
+        self.assertEqual(self.state.unknown, [])
+        self.assertFalse((self.tmp / "unknown.json").exists())
+
+    def test_72b_question_proc_not_recorded(self):
+        # 进程快照缺失 → proc="?"、session_id=None（残影）：不记账
+        scan = make_scan([conn("0.0.0.0", 45002, 702)], [], {})
+        items = self._build(scan)
+        self.assertEqual(items[0]["proc"], "?")
+        self.assertEqual(self.state.unknown, [])
+        self.assertFalse((self.tmp / "unknown.json").exists())
+
+    def test_72c_normal_unknown_still_recorded_redacted(self):
+        # 回归：普通可杀未知目标照常记账，且命令行先脱敏
+        scan = make_scan(
+            [conn("0.0.0.0", 45003, 703)],
+            [proc(703, name="myscript.exe", exe=r"C:\tools\myscript.exe",
+                  cmdline="myscript.exe --token secret123")],
+            {"703": 1})
+        items = self._build(scan)
+        self.assertEqual(items[0]["source"], "unknown")
+        self.assertTrue(items[0]["kill_allowed"])
+        self.assertEqual(len(self.state.unknown), 1)
+        saved = json.loads((self.tmp / "unknown.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved[0]["port"], 45003)
+        self.assertNotIn("secret123", json.dumps(saved, ensure_ascii=False))
+
+
+class Test73RefreshCsrfGate(ServerCase):
+    """单测 73：?refresh=1 只拦「浏览器跨源」请求（1.2 改-1 白名单谓词：
+    SFS 有值且不在 {same-origin, none} 内一律降级）；
+    无 SFS 头的本机脚本/CLI/验收照常强制刷新（README §5 单用户信任模型）。"""
+
+    SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
+
+    def test_73_refresh_gate_matrix(self):
+        real_scan = pc.scan_snapshot
+        counter = {"n": 0}
+
+        def counting():
+            counter["n"] += 1
+            return real_scan() if callable(real_scan) else real_scan
+
+        pc.scan_snapshot = counting
+        try:
+            # 冷缓存首次普通 GET：扫描 1 次
+            st, obj = http_req("GET", "/api/v1/ports")
+            self.assertEqual(st, 200)
+            self.assertFalse(obj["data_cached"])
+            self.assertFalse(obj["refresh_ignored"])
+            self.assertEqual(counter["n"], 1)
+            # 浏览器跨站子资源（<img> 类）：SFS=cross-site，降级命中缓存不扫描
+            st, obj = http_req("GET", "/api/v1/ports?refresh=1", None,
+                               {"Sec-Fetch-Site": "cross-site"})
+            self.assertEqual(st, 200)
+            self.assertTrue(obj["data_cached"])
+            self.assertTrue(obj["refresh_ignored"])
+            self.assertEqual(counter["n"], 1)
+            # 矛盾证据（同源 Origin + cross-site）：同样降级
+            st, obj = http_req("GET", "/api/v1/ports?refresh=1", None,
+                               {"Origin": f"http://127.0.0.1:{FAKE_PORT}",
+                                "Sec-Fetch-Site": "cross-site"})
+            self.assertTrue(obj["refresh_ignored"])
+            self.assertEqual(counter["n"], 1)
+            # 本机脚本/CLI：无 SFS 头（验收就是这种调用），照常强制新鲜
+            st, obj = http_req("GET", "/api/v1/ports?refresh=1")
+            self.assertEqual(st, 200)
+            self.assertFalse(obj["data_cached"])
+            self.assertFalse(obj["refresh_ignored"])
+            self.assertEqual(counter["n"], 2)
+            # 同源页面 fetch：SFS=same-origin，强制新鲜
+            st, obj = http_req("GET", "/api/v1/ports?refresh=1", None,
+                               {"Sec-Fetch-Site": "same-origin"})
+            self.assertEqual(st, 200)
+            self.assertFalse(obj["refresh_ignored"])
+            self.assertEqual(counter["n"], 3)
+            # 1.2 改-1 象限五：SFS=none（地址栏直达）→ 放行强制刷新。
+            # 原黑名单实现把 none 误降级（DIFF-01 的洞），白名单里 none 天然放行。
+            st, obj = http_req("GET", "/api/v1/ports?refresh=1", None,
+                               {"Sec-Fetch-Site": "none"})
+            self.assertEqual(st, 200)
+            self.assertFalse(obj["data_cached"])
+            self.assertFalse(obj["refresh_ignored"])
+            self.assertEqual(counter["n"], 4)
+            # 1.2 改-1 象限六：SFS=same-site（同站异源，<img> 只发 SFS 不发 Origin）
+            # → 降级。原只认 cross-site 的黑名单在这里漏放（交叉审抓到的洞）。
+            st, obj = http_req("GET", "/api/v1/ports?refresh=1", None,
+                               {"Sec-Fetch-Site": "same-site"})
+            self.assertEqual(st, 200)
+            self.assertTrue(obj["data_cached"])
+            self.assertTrue(obj["refresh_ignored"])
+            self.assertEqual(counter["n"], 4)
+        finally:
+            pc.scan_snapshot = real_scan
+
+
+class Test74DefaultsMatchConfigFiles(unittest.TestCase):
+    """单测 74：内置默认值必须与同目录权威配置一致——
+    DEFAULT_RULES（23 条）/DEFAULT_PROTECTION 与 rules.json/protection.json
+    再漂移直接红（1.1.0 曾漂移 15 vs 22，见 CHANGELOG）。"""
+
+    def test_74a_rules_default_equals_rules_json(self):
+        file_rules = pc.validate_rules(pc.read_json_file(_PKG / "rules.json"))
+        default_rules = pc.validate_rules(pc.DEFAULT_RULES)
+        self.assertEqual(len(default_rules), 21)
+        self.assertEqual(
+            [(r["match"], r["name"], r["level"], r["order"]) for r in file_rules],
+            [(r["match"], r["name"], r["level"], r["order"]) for r in default_rules])
+
+    def test_74b_protection_default_equals_protection_json(self):
+        file_p = pc.validate_protection(pc.read_json_file(_PKG / "protection.json"))
+        default_p = pc.validate_protection(pc.DEFAULT_PROTECTION)
+        self.assertEqual(file_p["ports"], default_p["ports"])
+        self.assertEqual(sorted(file_p["process_names"], key=str.casefold),
+                         sorted(default_p["process_names"], key=str.casefold))
+
+
 class Test68OnedriveNoRegression(ServerCase):
-    """单测 68：onedrive proc 源命中（两源拼接，exe 不进——System32 误伤实证）＋代表性样本无回归（全表真机对比在 acceptance）。"""
+    """单测 68（V75）：onedrive proc 源命中（两源拼接，exe 不进——System32 误伤实证）＋代表性样本无回归（全表真机对比在 acceptance）。"""
 
     EXTRA = {"rules": _rules21()}
 
@@ -2033,19 +2492,19 @@ class Test68OnedriveNoRegression(ServerCase):
         st = self.h.state
         base = {"port": 1, "addr": "0.0.0.0", "pid": 2, "proc": "x.exe", "exe": "",
                 "started": "s", "session_id": 1}
-        # 主样本：cmdline 非空但不含规则词，旧逻辑 unknown → 新逻辑命中
+        # 必修 5 主样本：cmdline 非空但不含规则词，旧逻辑 unknown → 新逻辑命中
         e = dict(base, port=42050, proc="OneDrive.Sync.Service.exe",
                  exe=r"C:\Users\x\OneDrive\OneDrive.Sync.Service.exe",
                  cmdline="/silentConfig")
         self.assertEqual(pc.classify_entry(st, e)["name"], "OneDrive")
         # 无回归 A：cmdline 命中的老样本（改动前后同命中）
         for over, name in [
-                ({"cmdline": r"D:\x\wechat-work\server.exe"}, "企业微信"),
-                ({"cmdline": r"D:\x\wechat\run.exe"}, "微信"),
-                ({"cmdline": r"D:\dsh\wechat-work\run.exe"}, "企业微信"),
+                ({"cmdline": r"D:\x\wechat-work\wxwork.exe"}, "企业微信"),
+                ({"cmdline": r"D:\x\wechat\WeChat.exe"}, "微信"),
                 ({"cmdline": "python -m ComfyUI.main"}, "ComfyUI"),
+                ({"cmdline": r"D:\dev\jupyter\jupyter.exe"}, "Jupyter"),
                 ({"cmdline": "ollama serve"}, "Ollama"),
-                ({"cmdline": r"D:\apps\wechat\WeChatApp.exe"}, "微信")]:
+                ({"cmdline": r"D:\apps\vscode\Code.exe"}, "VS Code")]:
             self.assertEqual(pc.classify_entry(st, dict(base, **over))["name"], name,
                              f"回归: {over}")
         # 无回归 B：cmdline 空、proc/exe 命中（新旧逻辑都看得到）

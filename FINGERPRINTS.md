@@ -1,56 +1,56 @@
-# PortWrench 端口扳手 · 发布指纹清单
+# PortWrench 端口扳手 · 指纹清单（1.2 发布版）
 
-> 认版口径：SHA256 前 16 位 · 全家约定（v1.1）。对码用——任何文件改动后本表由落码方重算。
-> 本表不含自身。运行时自建件（api_token.txt / runtime.json / instance.lock /
-> kill_audit.jsonl / unknown.json / port_map.json / __pycache__）不进发布包，故不入表。
+> **发布版**：21 条通用示例规则 ＋ 6 个系统保护端口，不含任何本机定制。
+> **认版口径**：SHA256 前 16 位。运行时自建件（`runtime.json` / `port_map.json` /
+> `dynamic_protection.json` / `unknown.json` / `kill_audit.jsonl` / `api_token.txt`）不入表。
 
 ## 本体与 CLI（7 件）
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `port_console.py` | 101,045 | `C264898A36E6FA1B` |
+| `port_console.py` | 116,061 | `70E412E086670063` |
 | `portctl.py` | 11,454 | `8F99144DEBCD8D49` |
 | `index.html` | 30,108 | `339FB01C5615F6B7` |
 | `rules.json` | 2,000 | `D7868BC85C1CFBCF` |
 | `protection.json` | 176 | `088CF0D167A2CE96` |
 | `ports.json` | 47,595 | `0DC0F560D532EA31` |
-| `ports.md` | 9,039 | `66D9283749032659` |
+| `ports.md` | 9,010 | `024B3209DEFF1B49` |
 
 ## 文档（12 件）
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `README.md` | 21,469 | `C0CF8A75C015C683` |
+| `README.md` | 21,888 | `D0F5153BD8D54329` |
 | `README.en.md` | 25,845 | `D86F7BD167C38855` |
-| `使用说明.md` | 9,185 | `26D8E2C0A8EE4CD7` |
-| `DEVELOPMENT.md` | 10,061 | `3C02D990FC663207` |
-| `CHANGELOG.md` | 13,091 | `E53CB4F95076F575` |
-| `SKILL.md` | 7,035 | `CD87867F58A061D2` |
+| `使用说明.md` | 9,321 | `DDE1B6C30F91C2C5` |
+| `DEVELOPMENT.md` | 10,064 | `4E442BE55052A766` |
+| `CHANGELOG.md` | 22,654 | `A2A0E5BBC9C07025` |
+| `SKILL.md` | 7,350 | `7F23000FAC2AFFB8` |
 | `NOTICE.md` | 7,665 | `80F41D7229D95817` |
 | `NOTICE.en.md` | 8,339 | `EB94935F67C93E0F` |
 | `LICENSE` | 1,070 | `0783452F7ED48AE9` |
 | `icon.png` | 13,751 | `7AFF6A9D46155FDD` |
 | `启动端口控制台.bat` | 615 | `EEAD371F44B83BD1` |
-| `.gitignore` | 497 | `E04AAD42913785FA` |
+| `.gitignore` | 598 | `D9ABB479920E7C6F` |
 
 ## DSH 薄壳（5 件）
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `packages/dsh-portwrench/package.json` | 769 | `E1563FDAE24974B5` |
+| `packages/dsh-portwrench/package.json` | 769 | `4E07D1DFB86F9B19` |
 | `packages/dsh-portwrench/cordis.patch.yml` | 60 | `583BC1E423C8CF36` |
-| `packages/dsh-portwrench/lib/index.mjs` | 2,786 | `C36C10E2BC10AED6` |
+| `packages/dsh-portwrench/lib/index.mjs` | 4,984 | `3B38E9EA0E5BE6E0` |
 | `packages/dsh-portwrench/lib/client.js` | 981 | `EA11135286326CA1` |
-| `packages/dsh-portwrench/README.md` | 2,652 | `55D0FF9849C64B60` |
+| `packages/dsh-portwrench/README.md` | 3,294 | `A88D0503C49CA25D` |
 
 ## 测试（4 件）
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `tests/test_port_console.py` | 102,831 | `9DEB4BA76EFFA149` |
-| `tests/acceptance_api.py` | 28,722 | `D9629E87C13E89E2` |
+| `tests/test_port_console.py` | 128,501 | `53A7C3E9CDCF4645` |
+| `tests/acceptance_api.py` | 29,978 | `EC3B57DE27416520` |
 | `tests/fixture_process_tree.py` | 2,555 | `0F3DE8E73EAA003A` |
-| `tests/fixture_windowed.ps1` | 1,526 | `233DD83095BE0349` |
+| `tests/fixture_windowed.ps1` | 1,529 | `95B4CD36235DB02A` |
 
 ## assets（25 件）
 
@@ -82,4 +82,4 @@
 | `assets/截图/ScreenShot_2026-11-01_191845_385.png` | 35,435 | `6E02C141683DCDF7` |
 | `assets/截图/ScreenShot_2026-11-01_191935_345.png` | 58,568 | `D847D5BAE9A21226` |
 
-- 清单文件数：53；生成时间：2026-11-02 03:55（**1.1.1 定版**：动态保护 protect/unprotect＋持久化＋编辑雷修＋index.html 与家自用版同 sha 339FB01C5615F6B7＋portctl 同 sha 8F99144DEBCD8D49；79 单测＋三发真机验收全过）
+- 清单文件数：53；生成时间：2026-11-03 17:0x（**1.2 发布版**：21 条通用示例规则 ＋ 6 个系统保护端口；相对 1.1.1 新增 —— 跨源白名单谓词统一、agent/ports 收口与限流（403→429→503→扫描，匿名纯只读）、3999 移出静态保护表、System 兜底只看进程名、ticks 换源与文案分流、壳探活校验响应体（壳 0.1.2）；**103 单测全绿**；21 步 acceptance 全过；真机实测跨端口 Sec-Fetch-Site=same-site、壳能挡 200 假诱饵选对本体）

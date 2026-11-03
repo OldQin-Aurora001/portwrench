@@ -1,4 +1,4 @@
-# 有窗监听夹具（fixture_windowed.ps1）
+﻿# 有窗监听夹具（fixture_windowed.ps1）
 # 用法：powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File fixture_windowed.ps1 -Port 46001 [-IgnoreCloseCount 1]
 # 行为：创建带标题的可见 WinForms 窗体 + 127.0.0.1 TcpListener；就绪后输出一行 READY；
 #       收到 WM_CLOSE 正常退出；-IgnoreCloseCount N 时由 FormClosing 取消前 N 次关窗

@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""端口控制台自动验收（脚本实跑 18 步；17 号由单测覆盖。
-1.1 1.0.1 增补 step19-21：展示缓存、/protection 提速、
-知识库全表回归，由单测 54-68 覆盖。
-只打控制台 API 与脚本自建的测试夹具，不碰系统服务或真实进程。
+"""端口控制台自动验收（T-PORT-002 · 方案 §11.3，脚本实跑 18 步；17 号由单测覆盖。
+T-PORT-004 1.0.1 增补 step19-21：展示缓存 V58/V73、/protection 提速 V74、
+知识库全表回归 V75。V54-V57/V59/V61-V72 由单测 54-68 覆盖（V57 取消保留编号）。
+只打控制台 API 与脚本自建的测试夹具，不碰 DSH、系统服务或真实进程。
 任一断言失败或清理失败 → 非零退出码。"""
 
 import argparse
@@ -195,7 +195,7 @@ class Windowed:
 
 
 # ----------------------------------------------------------------------------
-# 步骤
+# 步骤（对照方案 §11.3）
 # ----------------------------------------------------------------------------
 
 
@@ -228,7 +228,15 @@ def step3_l0_sees_tree(api, a_port, b_port):
 
 
 def step4_agent_ports_slim(api, a_port):
-    st, obj = api.req("GET", "/api/v1/agent/ports?port=" + str(a_port))
+    # 1.2 WS-C'（C1 真机侧）：匿名（无 token、无跨源头）精查 200 但纯只读——
+    # 不下发 snapshot_id。
+    st, anon = api.req("GET", "/api/v1/agent/ports?port=" + str(a_port))
+    require(st == 200 and len(anon["items"]) == 1, "匿名 agent/ports 精查返回 1 条")
+    require("snapshot_id" not in anon["items"][0], "匿名精查不得下发 snapshot_id")
+    require(anon.get("authenticated") is False, "匿名精查 authenticated=false")
+    # 持 token：全语义，唯一占用附 snapshot_id
+    st, obj = api.req("GET", "/api/v1/agent/ports?port=" + str(a_port),
+                      None, agent_hdr())
     require(st == 200 and len(obj["items"]) == 1, "agent/ports 精查返回 1 条")
     it = obj["items"][0]
     for k in ("name", "level", "source", "kill_allowed"):
@@ -236,6 +244,7 @@ def step4_agent_ports_slim(api, a_port):
     require("cmdline" not in it, "精简条目不含长 cmdline")
     require("snapshot_id" in it, "唯一占用附 snapshot_id")
     for bad in ("abc", "0", "70000"):
+        # 非法参数匿名同样应 400（参数校验先于语义，且与跨源无关）
         st, obj = api.req("GET", "/api/v1/agent/ports?port=" + bad)
         require(st == 400 and obj["reason"] == "invalid_request",
                 "非法 port=" + bad + " → 400 invalid_request")
@@ -243,7 +252,7 @@ def step4_agent_ports_slim(api, a_port):
 
 def step5_agent_rejections(api, a_port, tree_pid, tree_started):
     tok = TOKEN["v"]
-    # 1.0.1：started 必填——拒绝路径请求也带真实指纹
+    # T-PORT-003 B2：started 必填——拒绝路径请求也带真实指纹
     body = {"port": a_port, "pid": tree_pid, "proc": "python.exe", "started": tree_started}
     cases = [
         ("无 token", {}, 401, "unauthorized"),
@@ -317,7 +326,8 @@ def step10_fingerprint_full_flow(api, a_port, b2_port):
     t = Tree(a_port, b2_port)
     require(t.info is not None, "夹具重启（步骤 10）")
     try:
-        st, obj = api.req("GET", "/api/v1/agent/ports?port=" + str(a_port))
+        st, obj = api.req("GET", "/api/v1/agent/ports?port=" + str(a_port),
+                          None, agent_hdr())   # 1.2 WS-C'：取 sid 必须持 token
         sid = obj["items"][0]["snapshot_id"]
         st, obj = api.req("POST", "/api/v1/agent/kill-by-port",
                           {"port": a_port, "confirm": True}, agent_hdr())
@@ -335,7 +345,8 @@ def step10_fingerprint_full_flow(api, a_port, b2_port):
 def step11_owner_changed(api, a_port):
     t = Tree(a_port)
     try:
-        st, obj = api.req("GET", "/api/v1/agent/ports?port=" + str(a_port))
+        st, obj = api.req("GET", "/api/v1/agent/ports?port=" + str(a_port),
+                          None, agent_hdr())   # 1.2 WS-C'：取 sid 必须持 token
         sid = obj["items"][0]["snapshot_id"]
         t.kill_tree()
         require(wait_port_gone(a_port), "易主前进程已清")
@@ -359,7 +370,8 @@ def step12_replay_old_identity(api, a_port, started_old):
 
 
 def step13_self_port_protected(api):
-    st, obj = api.req("GET", "/api/v1/agent/ports?port=" + str(api.port))
+    st, obj = api.req("GET", "/api/v1/agent/ports?port=" + str(api.port),
+                      None, agent_hdr())   # 1.2 WS-C'：取 sid 必须持 token
     if not obj["items"]:
         note("  SKIP 控制台端口不在监听列表")
         return
@@ -373,7 +385,7 @@ def step13_self_port_protected(api):
 
 
 def _windowed_identity(api, port):
-    """1.0.1：起夹具后从完整条目取真实 started。"""
+    """T-PORT-003 B2：起夹具后从完整条目取真实 started。"""
     st, obj = api.req("GET", "/api/v1/ports?refresh=1")
     it = [i for i in obj["items"] if i["port"] == port]
     return (it[0]["proc"], it[0]["started"]) if it else ("powershell.exe", "")
@@ -425,7 +437,7 @@ def step16_orphan(api, a_port, b_port):
     subprocess.run(Tree.cmd(a_port, b_port, True), shell=False,
                    creationflags=CREATE_NO_WINDOW, timeout=30)
     require(wait_port_open(b_port), "orphan 子进程残留监听端口 B")
-    # 完整条目取 started（agent/ports 精简条目设计上不含 started）
+    # 完整条目取 started（agent/ports 精简条目按 §4.9 设计不含 started）
     st, obj = api.req("GET", "/api/v1/ports?refresh=1")
     it = [i for i in obj["items"] if i["port"] == b_port][0]
     child_pid, child_proc, child_started = it["pid"], it["proc"], it["started"]
@@ -478,12 +490,12 @@ def step18_single_instance():
 
 
 # ----------------------------------------------------------------------------
-# 1.1 1.0.1 增补步骤（单测层）
+# T-PORT-004 1.0.1 增补步骤（V58/V73/V74/V75；V54-V57/V59/V61-V63/V64-V72 单测层）
 # ----------------------------------------------------------------------------
 
 
 def step19_display_cache(api):
-    """展示缓存命中＋手动刷新绕缓存＋宽松断言（sid 端点不吃缓存）。"""
+    """V58 展示缓存命中＋V73 手动刷新绕缓存＋V59 宽松断言（sid 端点不吃缓存）。"""
     st, obj = api.req("GET", "/api/v1/ports")
     require(st == 200 and obj.get("ok"), "GET /api/v1/ports 200")
     require(obj.get("data_cached") is False, "首次 GET 为新鲜扫描（data_cached=false）")
@@ -491,18 +503,18 @@ def step19_display_cache(api):
     require(obj.get("data_scope") == "full", "缓存范围标记 _scope=full")
     st2, obj2 = api.req("GET", "/api/v1/ports")
     require(st2 == 200, "第二次 GET 200")
-    require(obj2.get("data_cached") is True, "5 秒内第二次 GET 命中缓存")
+    require(obj2.get("data_cached") is True, "5 秒内第二次 GET 命中缓存（V58）")
     require(obj2.get("data_time") == obj.get("data_time"), "缓存数据时间不漂移")
     st3, obj3 = api.req("GET", "/api/v1/ports?refresh=1")
     require(st3 == 200 and obj3.get("data_cached") is False,
-            "?refresh=1 绕过缓存强制新鲜")
+            "?refresh=1 绕过缓存强制新鲜（V73）")
     st4, obj4 = api.req("GET", "/api/v1/agent/ports?port=1", None, agent_hdr())
-    require(st4 in (200, 400), "agent/ports 定向请求可用（sid 端点走新鲜扫描）")
-    note("  NOTE：定向扫描与缓存写隔离由单测 65 断言（真机不可数扫描次数）")
+    require(st4 in (200, 400), "agent/ports 定向请求可用（V59：sid 端点走新鲜扫描）")
+    note("  NOTE V59：定向扫描与缓存写隔离由单测 65 断言（真机不可数扫描次数）")
 
 
 def step20_protection_speed(api):
-    """/protection 数据源换 GetActiveTcpListeners——端口集合与全表扫描一致＋实测耗时。"""
+    """V74：/protection 数据源换 GetActiveTcpListeners——端口集合与全表扫描一致＋实测耗时。"""
     sys.path.insert(0, str(ROOT))          # 已在头部 import 过；此处幂等
     import port_console as pcmod
     t0 = time.perf_counter()
@@ -512,7 +524,7 @@ def step20_protection_speed(api):
     t2 = time.perf_counter()
     full_set = {e["port"] for e in scan["entries"]}
     require(listeners == full_set,
-            f"GetActiveTcpListeners({len(listeners)}) 与全表扫描({len(full_set)}) 端口集合一致")
+            f"GetActiveTcpListeners({len(listeners)}) 与全表扫描({len(full_set)}) 端口集合一致（V74）")
     note("  实测耗时: listen_ports={:.3f}s  全表扫描={:.3f}s".format(t1 - t0, t2 - t1))
     st, obj = api.req("GET", "/api/v1/protection")
     require(st == 200 and "active_ports" in obj and "history_ports" in obj,
@@ -525,7 +537,7 @@ def step20_protection_speed(api):
 
 
 def step21_ports_json_regression(api):
-    """三源拼接后全表逐条对比改前识别结果——只允许 unknown→有名字 的改善，不许 A→B 误伤。"""
+    """V75：三源拼接后全表逐条对比改前识别结果——只允许 unknown→有名字 的改善，不许 A→B 误伤。"""
     import port_console as pcmod
     st, obj = api.req("GET", "/api/v1/ports?refresh=1", None, agent_hdr())
     require(st == 200, "GET /ports 200（agent 头取完整条目）")
@@ -534,7 +546,7 @@ def step21_ports_json_regression(api):
     improved, kept, wounded = 0, 0, []
     for it in obj["items"]:
         cmdline, proc_name, exe = it.get("cmdline", ""), it.get("proc", ""), it.get("exe", "")
-        # 改前逻辑：cmdline 非空就不看 proc/exe
+        # 改前逻辑（R3 必修 5 之前）：cmdline 非空就不看 proc/exe
         old_text = cmdline if cmdline else f"{proc_name} {exe}"
         # 改后逻辑与实现一致（两源：exe 全路径会把 System32 喂给 "System" 规则，
         # 真机实测误伤——见 port_console.classify_entry 注释与回件偏离申报）
@@ -553,7 +565,7 @@ def step21_ports_json_regression(api):
         else:
             wounded.append((it.get("port"), old_name, new_name))
     require(not wounded,
-            f"全表回归 {kept} 条不变 + {improved} 条改善（unknown→有名字），误伤 {len(wounded)} 条")
+            f"全表回归 {kept} 条不变 + {improved} 条改善（unknown→有名字），误伤 {len(wounded)} 条（V75）")
     if wounded:
         for w in wounded[:10]:
             note("  误伤样本: port={} {}→{}".format(*w))
@@ -609,7 +621,7 @@ def main():
         note("[6/21] UI 无同源证据 403")
         step6_ui_no_origin_403(api, a_port, trees[-1].info["pid"],
                                started_map.get(trees[-1].info["pid"], ""))
-        # （安全审查建议 8：原此处有一行 GET agent/ports 死代码——改从
+        # （复核建议 8：原此处有一行 GET agent/ports 死代码——B2 改从
         #   started_map 取 started 后它只剩白跑一次服务端扫描，已删）
         old_started = started_map.get(trees[-1].info["pid"], "")
         note("[7/21] agent/kill 单次直达")
@@ -635,11 +647,11 @@ def main():
         note("[17/21] 多占用/频率闸/系统身份硬拒 —— 由单测覆盖，不占脚本步骤")
         note("[18/21] 单实例行为")
         step18_single_instance()
-        note("[19/21] 展示缓存与手动刷新")
+        note("[19/21] 展示缓存与手动刷新（V58/V73/V59 NOTE）")
         step19_display_cache(api)
-        note("[20/21] /protection 数据源集合一致与耗时")
+        note("[20/21] /protection 数据源集合一致与耗时（V74）")
         step20_protection_speed(api)
-        note("[21/21] 知识库接入全表识别回归")
+        note("[21/21] 知识库接入全表识别回归（V75）")
         step21_ports_json_regression(api)
         note("[acceptance] 全部通过")
     except StepFail as e:

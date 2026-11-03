@@ -1,6 +1,6 @@
 {
   "name": "dsh-portwrench",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "PortWrench panel inside DSH: view listening ports, identify their owners, close process trees. Requires PortWrench (Windows).",
   "type": "module",
   "main": "lib/index.mjs",

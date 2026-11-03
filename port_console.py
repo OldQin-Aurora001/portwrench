@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PortWrench 端口扳手 · Windows 本机端口管理与 AI Agent 回环 API（单文件实现）
+端口控制台 · T-PORT-002 · 按《端口控制台_落码方案_R5.2_20261101.md》落码
 单文件后端，仅 Python 3.10+ 标准库。绑定 127.0.0.1，默认 3999 落码被占则顺延。
 
-安全硬要求速查：
+方案章节引用（§）均指 R5.2 方案。硬要求速查（工单 §六）：
   1) 不加 has_window；2) 不用 Owner/GetOwner；3) SessionId==0 保护；
   4) SessionId 缺失 fail closed；5) UI/AI 鉴权不混；6) 杀前必重扫；
   7) 多绑定按 (pid,proc,started) 归并；8) 不做一键全杀/全程管理员。
@@ -51,24 +51,24 @@ BASE_DIR = Path(__file__).resolve().parent
 API_VERSION = "v1"
 DEFAULT_PORT = 3999
 PORT_SCAN_RANGE = 100          # 3999 起顺延尝试数
-PS_TIMEOUT = 8.0               #  扫描超时
+PS_TIMEOUT = 8.0               # §5.1 扫描超时
 TASKKILL_TIMEOUT = 10.0
-BODY_LIMIT = 16 * 1024         #  请求体上限
-SNAPSHOT_TTL = 60.0            #  指纹 60 秒有效
-TICKET_TTL = 60.0              #  ticket 60 秒有效期
-KILL_RATE_LIMIT = 6            #  每分钟真实强杀上限
+BODY_LIMIT = 16 * 1024         # §7.4 请求体上限
+SNAPSHOT_TTL = 60.0            # §4.9 指纹 60 秒有效
+TICKET_TTL = 60.0              # §6.3 ticket 60 秒有效期
+KILL_RATE_LIMIT = 6            # §6.3 每分钟真实强杀上限
 KILL_RATE_WINDOW = 60.0
-WM_CLOSE_WAIT = 2.0            #  最多等 2 秒
-WM_CLOSE_POLL = 0.2            #  每 200ms 复核
-KILL_VERIFY_WINDOW = 3.0       #  强杀后验证窗口
+WM_CLOSE_WAIT = 2.0            # §6.4 最多等 2 秒
+WM_CLOSE_POLL = 0.2            # §6.4 每 200ms 复核
+KILL_VERIFY_WINDOW = 3.0       # §6.3 强杀后验证窗口
 AUDIT_ROTATE_BYTES = 1024 * 1024
 AUDIT_BACKUPS = 3
-UNKNOWN_MAX = 500              #  台账上限
-CMDLINE_STORE_MAX = 500        #  持久化前截断
+UNKNOWN_MAX = 500              # §4.4 台账上限
+CMDLINE_STORE_MAX = 500        # §4.4 持久化前截断
 
-# 安全审查：词边界改 lookaround——\b 对 client_secret/AWS_SECRET_ACCESS_KEY
+# M1（T-PORT-003）：词边界改 lookaround——\b 对 client_secret/AWS_SECRET_ACCESS_KEY
 # 这类下划线复合词不咬（_ 是 word 字符），改 (?<![A-Za-z0-9]) 前置断言。
-# 安全审查建议 4：关键词后允许 [A-Za-z0-9_]* 吞掉复合后缀（MY_SECRET_VALUE/
+# 复核建议 4：关键词后允许 [A-Za-z0-9_]* 吞掉复合后缀（MY_SECRET_VALUE/
 # AWS_SECRET_ACCESS_KEY 整体命中）；两字符前瞻 (?![A-Za-z][a-z]) 精调——
 # credentials 的复数 's=' 放行，keyboard/tokenize/secretary 的"单词延续"拦截
 # （单 (?![A-Za-z]) 会连坐 credentials，纯后缀吞吃会误伤 keyboard，两字符版两全）。
@@ -88,7 +88,7 @@ CLIENT_HEADER = "X-Port-Console-Client"
 
 CREATE_NO_WINDOW = 0x08000000
 
-# Win32
+# Win32（§6.4）
 WM_CLOSE = 0x0010
 GW_OWNER = 4
 GWL_EXSTYLE = -20
@@ -99,7 +99,7 @@ ERROR_ACCESS_DENIED = 5
 SYSTEM32_PREFIX = os.path.abspath(
     os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")) + os.sep
 
-# System32「关键宿主」名单（限定"关键宿主"而非一切 System32 可执行文件）：
+# System32「关键宿主」名单（方案 §4.2 原文限定"关键宿主"而非一切 System32 可执行文件）：
 # 控制台程序的 conhost.exe、cmd.exe 等用户态伴生**不在名单**——它们正是"黑框"本体，
 # 杀树必然连带；若按路径全拦，任何带黑框的进程（DSH 全家）都会被误判成不可杀。
 SYSTEM32_HOST_NAMES = {
@@ -110,11 +110,11 @@ SYSTEM32_HOST_NAMES = {
 # 审计备份固定名表（轮转专用，无动态拼接）
 AUDIT_BAK_NAMES = ("kill_audit.jsonl.1", "kill_audit.jsonl.2", "kill_audit.jsonl.3")
 
-# PowerShell 快照脚本：一轮取 TCP Listen + Win32_Process + SessionId。
+# PowerShell 快照脚本（§5.1/§5.2）：一轮取 TCP Listen + Win32_Process + SessionId。
 # 不取 MainWindowHandle（Win32_Process 无此属性，硬要求 1）；
 # 不取 Owner/GetOwner（普通权限对系统进程返回空，硬要求 2）；
 # SessionId 用 Get-Process 一次性批量补齐（硬要求 3）。
-# 安全审查建议①：SessionId 读不出的
+# T-PORT-005 复核建议①（复核方提、复核方核、户主拍板顺手改）：SessionId 读不出的
 # 进程也先占 null 键——键存在=进程被见到（人还在），值 null=会话读不出（下游 fail
 # closed 拒杀），与"键不存在=刚退出（剔除）"严格区分。否则注释承诺与实现不符，
 # "活着但哑了"会被误当"已走"漏保护（本机实测 0 例，纯加固）。
@@ -129,9 +129,29 @@ $conns = @(foreach ($c in $connList) {
         ownerPid     = [int]$c.OwningProcess
     }
 })
+# 1.2 改-6：pid → 本地时间字符串（Get-Process.StartTime 主源，见下方 $procs 注释）
+$startTimeMap = @{}
+try {
+    foreach ($gp in (Get-Process -ErrorAction SilentlyContinue)) {
+        try {
+            if ($gp.StartTime) {
+                $startTimeMap[[string]$gp.Id] = $gp.StartTime.ToString("yyyy-MM-ddTHH:mm:sszzz")
+            }
+        } catch {}
+    }
+} catch {}
 $procs = @(foreach ($p in (Get-CimInstance -ClassName Win32_Process)) {
+    # 1.2 改-6 ticks 换源：started 主源换 Get-Process.StartTime——交付机对拍
+    # 233/233 残差 0，CIM CreationDate 仅 28/233（缺口是权限相关不是测量误差，
+    # 工单改-6 三家对照：高权限全读、普通权限缺口=Session 0）。
+    # 格式保持 yyyy-MM-ddTHH:mm:sszzz 本地时间——pid_matches_start 第③关按
+    # started[:19] 秒级比对，消费方零改动；Get-Process 读不到时回退试 CIM
+    # CreationDate（双向兜底）。cmdline/exe/ppid 仍走 Win32_Process（仅 CIM 提供）。
     $sd = $null
-    try { if ($p.CreationDate) { $sd = $p.CreationDate.ToString("yyyy-MM-ddTHH:mm:sszzz") } } catch {}
+    try { $sd = $startTimeMap[[string]$p.ProcessId] } catch {}
+    if (-not $sd) {
+        try { if ($p.CreationDate) { $sd = $p.CreationDate.ToString("yyyy-MM-ddTHH:mm:sszzz") } } catch {}
+    }
     [ordered]@{
         pid     = [int]$p.ProcessId
         ppid    = [int]$p.ParentProcessId
@@ -153,9 +173,9 @@ try {
     ConvertTo-Json -Depth 4 -Compress
 """
 
-# /api/v1/protection 专用轻脚本（独立轻脚本）：只要"哪些端口在监听"，
+# /api/v1/protection 专用轻脚本（T-PORT-004 R3 §4.6 白捡）：只要"哪些端口在监听"，
 # 不需要 PID/进程详情——GetActiveTcpListeners 实测 ~1.2s → ~0.1s。
-# 独立优化，不与杀进程路径混；端口集合与全表扫描的一致性由单测 67+acceptance 把守。
+# 独立优化，不与杀进程路径混；端口集合与全表扫描的一致性由 V74/单测 67+acceptance 把守。
 PS_LISTEN_PORTS_SCRIPT = r"""
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 $ErrorActionPreference = 'Stop'
@@ -169,11 +189,11 @@ ConvertTo-Json -InputObject @(@($eps) | ForEach-Object { [int]$_.Port }) -Compre
 
 
 class ScanError(Exception):
-    """扫描失败。"""
+    """扫描失败（§5.1：不能把失败当成 0 个端口）。"""
 
 
 class ConfigError(Exception):
-    """配置损坏。"""
+    """配置损坏（§4：拒绝启动）。"""
 
 
 def now_iso() -> str:
@@ -197,7 +217,7 @@ def _safe_tmp_path(base_dir: Path) -> Path:
 
 
 def as_list(obj):
-    """：兼容 PowerShell 把单元素数组展开为对象（list/tuple/dict 全收）。"""
+    """§5.2：兼容 PowerShell 把单元素数组展开为对象（list/tuple/dict 全收）。"""
     if obj is None:
         return []
     if isinstance(obj, list):
@@ -208,7 +228,7 @@ def as_list(obj):
 
 
 def atomic_write_json(path: Path, obj, *, indent=2) -> None:
-    """：同目录临时文件 + write_text + os.replace；失败抛异常不假装成功。"""
+    """§4.5：同目录临时文件 + write_text + os.replace；失败抛异常不假装成功。"""
     _inside(path.parent, path)
     tmp = _safe_tmp_path(path.parent)
     try:
@@ -239,8 +259,8 @@ def is_int(v) -> bool:
 
 
 def redact_cmdline(cmdline: str) -> str:
-    """/：token/api-key/password/secret 参数值与 URL 内嵌凭据 → ***。
-    安全审查：下划线复合词（client_secret/AWS_SECRET_ACCESS_KEY/PROVIDER_APIKEY）
+    """§4.4/§7.4：token/api-key/password/secret 参数值与 URL 内嵌凭据 → ***。
+    M1（T-PORT-003）：下划线复合词（client_secret/AWS_SECRET_ACCESS_KEY/PROVIDER_APIKEY）
     与 Bearer JWT 全覆盖。"""
     if not cmdline:
         return cmdline
@@ -253,7 +273,7 @@ def redact_cmdline(cmdline: str) -> str:
 
 
 # ----------------------------------------------------------------------------
-# 回环探活：socket 裸 HTTP/1.0 直连 health 端点（零动态 URL、零 urllib）
+# 回环探活（§4.7）：socket 裸 HTTP/1.0 直连 health 端点（零动态 URL、零 urllib）
 # ----------------------------------------------------------------------------
 
 
@@ -281,7 +301,7 @@ def _health_probe(port) -> bool:
 
 
 # ----------------------------------------------------------------------------
-# Win32 绑定
+# Win32 绑定（§6.4）
 # ----------------------------------------------------------------------------
 
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -368,7 +388,7 @@ def pid_matches_start(pid: int, expected_started: str) -> bool:
 
 
 def find_main_window_for_pid(pid: int):
-    """：枚举顶层窗口，取第一个满足筛选的 HWND（EnumWindows 顺序即 Z 序）。
+    """§6.4：枚举顶层窗口，取第一个满足筛选的 HWND（EnumWindows 顺序即 Z 序）。
     回调对象活到枚举结束（函数作用域保证）。"""
     found = []
 
@@ -394,17 +414,17 @@ def find_main_window_for_pid(pid: int):
 
 
 def post_wm_close(hwnd: int) -> bool:
-    """PostMessageW 返回 0 = 发送失败（不代表进程同意退出）。 步 5。"""
+    """PostMessageW 返回 0 = 发送失败（不代表进程同意退出）。§6.4 步 5。"""
     return bool(_user32.PostMessageW(hwnd, WM_CLOSE, 0, 0))
 
 
 # ----------------------------------------------------------------------------
-# PowerShell 调用与快照归一化
+# PowerShell 调用与快照归一化（§5）
 # ----------------------------------------------------------------------------
 
 
 def run_powershell(script: str) -> str:
-    """：-EncodedCommand（UTF-16LE→Base64）、CREATE_NO_WINDOW、8s 超时、shell=False。"""
+    """§5.1：-EncodedCommand（UTF-16LE→Base64）、CREATE_NO_WINDOW、8s 超时、shell=False。"""
     encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     cmd = [
         "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
@@ -429,7 +449,7 @@ def run_powershell(script: str) -> str:
 
 
 def scan_snapshot() -> dict:
-    """一轮快照：connections + processes + sessions。失败抛 ScanError。"""
+    """一轮快照（§5.2）：connections + processes + sessions。失败抛 ScanError。"""
     raw = run_powershell(PS_SNAPSHOT_SCRIPT)
     try:
         data = json.loads(raw)
@@ -441,7 +461,7 @@ def scan_snapshot() -> dict:
 
 
 def scan_listen_ports() -> set:
-    """TCP 监听端口集合（只喂 /api/v1/protection）。失败抛 ScanError。"""
+    """TCP 监听端口集合（T-PORT-004 R3 §4.6，只喂 /api/v1/protection）。失败抛 ScanError。"""
     raw = run_powershell(PS_LISTEN_PORTS_SCRIPT)
     try:
         data = json.loads(raw)
@@ -463,8 +483,8 @@ def scan_listen_ports() -> set:
 
 
 def normalize_snapshot(raw: dict) -> dict:
-    """：不按端口过滤、不按端口去重；去重键 (addr,port,pid)；排序 (port,addr,pid)。
-    _session_seen 保留 PS 端 Get-Process 报告过的全部 pid 键：
+    """§5.3：不按端口过滤、不按端口去重；去重键 (addr,port,pid)；排序 (port,addr,pid)。
+    _session_seen 保留 PS 端 Get-Process 报告过的全部 pid 键（T-PORT-004 R3 §4.4）：
     键存在=进程在被查询那一刻还活着（含 SessionId 读不出异常的）；键不存在=已被
     SilentlyContinue 静默跳过=刚退出。没有这份键存在性，"已退出（可剔除）"与
     "还活着但读不到会话（必须 fail closed）"两种情形在 Python 端无法区分。"""
@@ -515,7 +535,7 @@ def normalize_snapshot(raw: dict) -> dict:
 
         proc_info = procs.get(pid)
         if proc_info is None:
-            # ：进程已退出或权限不足 → 保留监听行，proc="?"
+            # §5.3：进程已退出或权限不足 → 保留监听行，proc="?"
             proc_name, exe, cmdline, started = "?", "", "", ""
         else:
             proc_name, exe = proc_info["name"], proc_info["exe"]
@@ -533,7 +553,7 @@ def normalize_snapshot(raw: dict) -> dict:
 
 
 # ----------------------------------------------------------------------------
-# 配置加载与校验
+# 配置加载与校验（§4.1-§4.4）
 # ----------------------------------------------------------------------------
 
 DEFAULT_RULES = [
@@ -562,6 +582,9 @@ DEFAULT_RULES = [
     {"match": "lsass", "name": "系统", "level": "system", "order": 92},
 ]
 
+# 3999 刻意不入静态保护表（1.2 改-3：本体端口流动顺延，静态表只会误护后来的
+# 占用者；本体自保走 protection_reason 的「控制台自身端口」，按实际绑定口无条件
+# 命中，与这张表无关）。
 DEFAULT_PROTECTION = {
     "ports": [135, 139, 445, 3389, 5985, 5986],
     "process_names": [
@@ -572,7 +595,7 @@ DEFAULT_PROTECTION = {
 
 
 def validate_rules(raw):
-    """：字段校验，非法拒绝启动。"""
+    """§4.1：字段校验，非法拒绝启动。"""
     if not isinstance(raw, list) or not raw:
         raise ConfigError("rules.json 必须是非空数组")
     out = []
@@ -597,7 +620,7 @@ def validate_rules(raw):
 
 
 def validate_protection(raw):
-    """：端口 1..65535 整数；进程名非空。"""
+    """§4.2：端口 1..65535 整数；进程名非空。"""
     if not isinstance(raw, dict):
         raise ConfigError("protection.json 必须是对象")
     ports = raw.get("ports", [])
@@ -618,7 +641,7 @@ def validate_protection(raw):
 
 
 def validate_port_map(raw):
-    """：key=十进制端口字符串；level 仅 self/other（系统保护不可手工降级）。"""
+    """§4.3：key=十进制端口字符串；level 仅 self/other（系统保护不可手工降级）。"""
     if not isinstance(raw, dict):
         raise ConfigError("port_map.json 必须是对象")
     out = {}
@@ -633,10 +656,20 @@ def validate_port_map(raw):
             raise ConfigError(f"port_map.json[{k}] name 非法")
         if level not in ("self", "other"):
             raise ConfigError(f"port_map.json[{k}] level 仅允许 self/other")
+        # 1.2 改-5（R0 F5 后半）：proc/started 超长在加载处拦下——name 已有长度
+        # 校验，这两个字段原先不设防；手工编辑塞进来的垃圾串会一路带进
+        # classify_entry 与 fill_mapping_fingerprint。上限按语义给：
+        # proc=镜像名 ≤260（NTFS 文件名上限）、started=ISO8601 时间戳 ≤64。
+        proc = str(v.get("proc", "") or "")
+        started = str(v.get("started", "") or "")
+        if len(proc) > 260:
+            raise ConfigError(f"port_map.json[{k}] proc 超长（>260）")
+        if len(started) > 64:
+            raise ConfigError(f"port_map.json[{k}] started 超长（>64）")
         out[k] = {
             "name": name, "level": level,
-            "proc": str(v.get("proc", "") or ""),
-            "started": str(v.get("started", "") or ""),
+            "proc": proc,
+            "started": started,
         }
     return out
 
@@ -653,7 +686,7 @@ def _keep_corrupt_copy(base_dir: Path, broken: Path, label: str, warnings: list)
 
 
 def load_and_validate_configs(base_dir: Path) -> dict:
-    """rules/protection 损坏拒绝启动；port_map/unknown 损坏保留副本新建。"""
+    """rules/protection 损坏拒绝启动（§4.1/§4.2）；port_map/unknown 损坏保留副本新建。"""
     warnings = []
 
     rules_path = base_dir / "rules.json"
@@ -719,28 +752,38 @@ def load_and_validate_configs(base_dir: Path) -> dict:
 
 
 # ----------------------------------------------------------------------------
-# 识别
+# 识别（§4.1/§4.3/§4.4）
 # ----------------------------------------------------------------------------
 
 
 def classify_entry(state, entry: dict) -> dict:
     """返回 name/level/source/mapping_stale。优先级：手工映射 > 自动规则 > 未知；
-    最终安全优先级：系统保护 > 手工映射与自动规则。"""
+    最终安全优先级：系统保护 > 手工映射与自动规则（§4.3）。"""
     port, proc, exe, cmdline = entry["port"], entry["proc"], entry["exe"], entry["cmdline"]
     matched = None
-    # 安全审查：拼接 proc 源——cmdline 非空也看进程名。
+    # T-PORT-004 R3 必修 5：拼接 proc 源——cmdline 非空也看进程名。
     # 实测坑：OneDrive.Sync.Service.exe 的 cmdline 只有 "/silentConfig"，
     # 旧逻辑"cmdline 非空就不看 proc/exe"导致 onedrive 类规则永远命中不了。
-    # ⚠ 识别本为三源（cmdline, proc, exe）——真机实测砍掉 exe 源：
+    # ⚠ 方案原文是三源（cmdline, proc, exe）——真机实测砍掉 exe 源（偏离申报）：
     #   exe 是全路径，System32 下的 "C:\Windows\System32\..." 会以 "system" 子串
     #   命中规则 "System"(order 91, level=system)，把全部 System32 进程误标系统级
     #   403（acceptance step14 的 powershell 夹具实锤）。proc 名命中 onedrive
     #   已足够（OneDrive.Sync.Service.exe 含 "onedrive"）。
-    # ⚠ 此改动扩大所有规则的匹配面，全表改前/改后逐条对比由单测 68 把守。
+    # ⚠ 此改动扩大所有规则的匹配面，全表改前/改后逐条对比由 V75/单测 68 把守。
     text = " ".join(x for x in (cmdline, proc) if x)
     text_low = text.casefold()
+    proc_low = proc.casefold()
     for r in state.rules:                    # 已按 (order, 文件序号) 预排序
-        if r["match"].casefold() in text_low:
+        # 1.2 改-4（甲案，复核方 08:0x 拍板）：level=system 的兜底规则只用 proc 名
+        # 匹配、不看 cmdline——AI 程序的命令行带 --system-prompt 是家常便饭，拼接
+        # 匹配会把任意带该参数的 AI 进程误标 system 级 403 硬拒（AI 通道带正确
+        # token 也杀不动），而「关掉 DSH 全家」正是本工具的核心诉求。真 System/
+        # svchost/lsass 的 proc 名本来就够（svchost.exe -k netsvcs 这类不受影响）；
+        # 应用识别规则（self/other）仍走 cmdline+proc 双源（V75/单测 68 口径不变）。
+        # 乙案（rules.json 加 match_field 维度）是长期正解，留二期；丙案（改窄
+        # match 字面量）会把 PID 4 的真 System（cmdline 为空）漏掉，禁止。
+        hay = proc_low if r["level"] == "system" else text_low
+        if r["match"].casefold() in hay:
             matched = r
             break
 
@@ -761,7 +804,7 @@ def classify_entry(state, entry: dict) -> dict:
 
 
 def fill_mapping_fingerprint(state, entry: dict) -> None:
-    """：旧手工记录无指纹时按首次发现补齐（带锁写盘，低频）。"""
+    """§4.3：旧手工记录无指纹时按首次发现补齐（带锁写盘，低频）。"""
     if not entry["started"]:
         return
     with state.state_lock:
@@ -777,7 +820,7 @@ def fill_mapping_fingerprint(state, entry: dict) -> None:
 
 
 def record_unknown(state, entry: dict) -> None:
-    """：以 (port, proc, 截断脱敏后 cmdline) 去重；PID 变化不重复记账。"""
+    """§4.4：以 (port, proc, 截断脱敏后 cmdline) 去重；PID 变化不重复记账。"""
     key_val = (entry["port"], entry["proc"].casefold(),
                redact_cmdline(entry["cmdline"])[:CMDLINE_STORE_MAX])
     with state.state_lock:
@@ -800,7 +843,7 @@ def record_unknown(state, entry: dict) -> None:
 
 
 # ----------------------------------------------------------------------------
-# 保护
+# 保护（§4.2 / §6.1 步7 / §6.3 子树护栏）
 # ----------------------------------------------------------------------------
 
 
@@ -811,7 +854,7 @@ def _proc_name_matches(rule_name: str, proc: str) -> bool:
 
 
 def protection_reason(state, entry: dict):
-    """返回保护原因字符串或 None。运行时系统身份保护不落盘。"""
+    """返回保护原因字符串或 None。运行时系统身份保护不落盘（§4.2）。"""
     exe_low = (entry.get("exe") or "").casefold()
     pid = entry["pid"]
     if pid <= 4:
@@ -831,12 +874,12 @@ def protection_reason(state, entry: dict):
         return "系统会话进程(Session 0)"
     if entry.get("session_id") is None:
         return "会话信息缺失(fail closed)"
-    # 安全审查建议：started 读不到时指纹链失效且会造成误导性 503
-    # （issue_snapshot_id 拒发）——与其 fail-closed 同风格 fail closed，3 行堵死。
+    # 复核建议（复核方方案乙）：started 读不到时指纹链失效且会造成误导性 503
+    # （issue_snapshot_id 拒发）——与 B4 同风格 fail closed，3 行堵死。
     if not entry.get("started"):
         return "启动时间不可读(fail closed)"
-    # 安全审查：exe 读不到时 System32 路径护栏失效（startswith 恒 False）。
-    # 实测数据：普通权限下 131 个 session 0 + 14 个 session 1 进程读不到 exe，
+    # B4（T-PORT-003）：exe 读不到时 System32 路径护栏失效（startswith 恒 False）。
+    # 复核方实测：普通权限下 131 个 session 0 + 14 个 session 1 进程读不到 exe，
     # 其中 MSI.TerminalServer.exe（端口 26822, session 1）按原判定会被放行。
     # fail closed：读不到路径一律保护，不留"因为读不到所以放行"的口子。
     if not entry.get("exe"):
@@ -860,20 +903,29 @@ def _parse_started_dt(s):
 
 def build_tree_with_session_filter(processes: dict, sessions: dict,
                                    root_pid: int) -> list:
-    """按 ppid 在【全量快照】内存构树，并做两类剔除。
-    ⚠ 耦合声明（勿拆，自 build_process_tree 移入）：保护检查用的
+    """T-PORT-004 R3 §4.4：按 ppid 在【全量快照】内存构树，并做两类剔除。
+    ⚠ 复核建议 6（耦合声明，勿拆，自 build_process_tree 移入）：保护检查用的
     树来自【扫描快照】，taskkill /T 按【实时父子关系】杀——两者语义一致的前提是
     Windows 的 PPID 语义。若将来把 taskkill 换成自研递归 kill，必须改为实时构树，
     否则保护检查会失守。数据来源是同一轮全量 CIM 快照，不做任何逐层/逐 PID 的
     WMI 查询（R3 拆阻断：逐 PID 递归子树实测 164 秒撞超时线，已删）。
 
-    sessions 键存在性语义（三种判定的分界）：
-      - pid 不在 sessions → Get-Process 静默跳过 = 该成员已退出 → 差集剔除；
-      - pid 在 sessions 且值 None → 人还在但读不到会话 → 保留在树里，
-        由 check_protection 的 protection_reason fail closed 拒绝；
-      - 查询命令本身失败 → scan_or_error 已抛 ScanError 拒绝关闭（不在本函数）。
+    ⚠ 时序审查补注（1.2，复核方 15:5x，勿拆）：上面的耦合声明只覆盖了「检查树 vs
+    执行树」，还有第二层没写——**B1 杀前实时复核（close_target 里 pid_matches_start）
+    只复核 target 这一个 pid，不逐个复核子树成员**。所以「扫描后、taskkill 前，目标
+    新建的子进程」既不在快照树里（未过 check_protection），又会被 taskkill /T 按实时
+    父子关系连带杀掉。当前概率极低（要求目标在几百毫秒内 spawn 子进程且该子进程恰好
+    受保护），且 taskkill /T 的实时语义恰好兜住了「已退出成员」这一侧。但改这一带时
+    必须知道：**复核范围＝root，杀范围＝实时全树，两者不相等**。若要收紧，做法是杀前
+    重扫一次并逐个 pid_matches_start 校验子树——代价是每杀一次多一轮全表扫描（0.3-0.8s）。
 
-    PPID 复用过滤（放宽方向、必须保守）：
+    sessions 键存在性语义（三判据的分界）：
+      - pid 不在 sessions → Get-Process 静默跳过 = 该成员已退出 → 差集剔除（判据 2）；
+      - pid 在 sessions 且值 None → 人还在但读不到会话 → 保留在树里，
+        由 check_protection 的 protection_reason fail closed 拒绝（判据 3）；
+      - 查询命令本身失败 → scan_or_error 已抛 ScanError 拒绝关闭（判据 1，不在本函数）。
+
+    PPID 复用过滤（工单备注 3，放宽方向、必须保守）：
       - 子树成员 started 早于根 started → 视为 PPID 复用孤儿，剔除；
       - started 为空 / 解析失败 / 根 started 为空 → 不剔（不知道怎么判就别剔）；
       - aware datetime 比较，跨时区偏移表示也能正确比先后。"""
@@ -895,7 +947,7 @@ def build_tree_with_session_filter(processes: dict, sessions: dict,
         if pid == root_pid:
             out.append(pid)
             continue
-        # Get-Process 没见到（键不存在）= 刚退出 → 剔除，不参与保护判定。
+        # 判据 2：Get-Process 没见到（键不存在）= 刚退出 → 剔除，不参与保护判定。
         # sessions 键缺失时（旧式 mock/防御路径）视为全员在场，不做剔除（保守）。
         if sessions is not None and pid not in sessions:
             continue
@@ -910,7 +962,7 @@ def build_tree_with_session_filter(processes: dict, sessions: dict,
 
 
 def check_protection(state, scan: dict, target: dict, tree_pids: list):
-    """返回 (allowed, reason, protected_entry)。子树含保护成员/自身 → 整次拒绝。"""
+    """返回 (allowed, reason, protected_entry)。子树含保护成员/自身 → 整次拒绝（§6.3）。"""
     entries_by_pid = {}
     for e in scan["entries"]:
         entries_by_pid.setdefault(e["pid"], e)
@@ -939,7 +991,7 @@ def check_protection(state, scan: dict, target: dict, tree_pids: list):
 
 
 # ----------------------------------------------------------------------------
-# 审计：os.open 追加写（无内置 open），>1MiB 轮转最多 3 备份
+# 审计（§4.8）：os.open 追加写（无内置 open），>1MiB 轮转最多 3 备份
 # ----------------------------------------------------------------------------
 
 
@@ -971,12 +1023,12 @@ def write_audit_event(state, event: dict) -> None:
 
 
 # ----------------------------------------------------------------------------
-# 授权
+# 授权（§4.6 / §6.1 / §6.3）
 # ----------------------------------------------------------------------------
 
 
 def authorize_ui_request(origin: str, sec_fetch_site: str, actual_port: int) -> bool:
-    """：Origin/SFS 至少一个满足本机同源；缺失、跨源、矛盾一律不合格。
+    """§7.4：Origin/SFS 至少一个满足本机同源；缺失、跨源、矛盾一律不合格。
     /ui/* 不合格必须 403 且不做扫描（单测 22）。"""
     expected = f"http://127.0.0.1:{actual_port}"
     origin_ok = origin == expected
@@ -991,13 +1043,74 @@ def authorize_ui_request(origin: str, sec_fetch_site: str, actual_port: int) -> 
 
 
 def has_ui_evidence(origin: str, sec_fetch_site: str, actual_port: int) -> bool:
-    """GET /ports 的「同源证据」判定。"""
+    """GET /ports 的「同源证据」判定（cmdline 脱敏决策，§7.4）。"""
     return authorize_ui_request(origin, sec_fetch_site, actual_port)
 
 
+def is_cross_origin_request(origin: str, sec_fetch_site: str, actual_port: int) -> bool:
+    """1.2 改-1：跨源判定（白名单式），/ports 的 refresh 门与 agent/ports 共用。
+    跨源（返回 True）当且仅当：
+      ① SFS 有值且不在 {"same-origin", "none"} 白名单内——cross-site、same-site、
+         以及将来浏览器新增的任何取值全拒（白名单 fail closed；黑名单会自动漏，
+         1.2 交叉审就抓到 same-site 漏放：site=(scheme,host) 不含端口，
+         127.0.0.1:3080 → 127.0.0.1:3999 属同站异源，而 <img> 只发 SFS 不发 Origin）；
+      ② 或 Origin 存在且非本机同源。
+    无 Origin 且无 SFS 的本机程序（portctl/验收/AI 脚本）返回 False——这是 L0
+    通路的命脉，语义刻意与 authorize_ui_request 的「无证据即拒」相反；
+    两谓词各管各端，不许复用（裁定 §二/§三：复用=CLI 当场死）。"""
+    expected = f"http://127.0.0.1:{actual_port}"
+    if sec_fetch_site and sec_fetch_site not in ("same-origin", "none"):
+        return True
+    return bool(origin and origin != expected)
+
+
+# agent/ports 限流初始值（1.2 改-2，复核方 04:00 裁定 §5.2；真机可调——U12/U13 未验，
+# 真实负载未知，写成具名常量挤了再调，别散落字面量）。
+AGENT_PORTS_RATE_ANON = 30       # 匿名请求：30 次/分钟
+AGENT_PORTS_RATE_TOKEN = 60      # 有效 token 请求：60 次/分钟
+AGENT_PORTS_MAX_INFLIGHT = 2     # 在飞全表扫描并发上限
+AGENT_PORTS_WINDOW = 60.0        # 滑动窗口宽（秒）
+
+
+class _AgentPortsGate:
+    """agent/ports 专用限流闸：匿名/token 两档滑动窗口 + 在飞扫描并发闸。
+    与杀链路频率闸（try_consume_rate_slot）互不相干——那把闸管杀，这把管读。"""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._anon = deque()
+        self._token = deque()
+        self._inflight = 0
+
+    def try_acquire(self, authenticated: bool) -> bool:
+        """滑动窗口计数；False=超限（429）。"""
+        now = time.monotonic()
+        with self._lock:
+            dq = self._token if authenticated else self._anon
+            limit = AGENT_PORTS_RATE_TOKEN if authenticated else AGENT_PORTS_RATE_ANON
+            while dq and dq[0] < now - AGENT_PORTS_WINDOW:
+                dq.popleft()
+            if len(dq) >= limit:
+                return False
+            dq.append(now)
+            return True
+
+    def try_enter_inflight(self) -> bool:
+        """在飞并发闸；False=满（503）。进入者必须配对 leave_inflight（finally）。"""
+        with self._lock:
+            if self._inflight >= AGENT_PORTS_MAX_INFLIGHT:
+                return False
+            self._inflight += 1
+            return True
+
+    def leave_inflight(self) -> None:
+        with self._lock:
+            self._inflight -= 1
+
+
 def issue_force_ticket(state, target: dict, channel: str) -> str:
-    """：ticket 绑定目标四元组、调用通道（通道补齐）与 60 秒有效期，仅内存。
-    安全审查建议 9：channel 必填——给了默认值等于把通道校验防的口子重新开开。"""
+    """§6.3：ticket 绑定目标四元组、调用通道（S4，T-PORT-003 补齐）与 60 秒有效期，仅内存。
+    复核建议 9：channel 必填——给了默认值等于把 S4 防的口子重新开开。"""
     ticket = secrets.token_urlsafe(16)
     with state.state_lock:
         now = time.monotonic()
@@ -1012,7 +1125,7 @@ def issue_force_ticket(state, target: dict, channel: str) -> str:
 
 
 def consume_force_ticket(state, ticket: str, target: dict, channel: str) -> str:
-    """返回 ""=通过；否则错误 reason（409 force_ticket_invalid，单测 8）。校验 channel 绑定。"""
+    """返回 ""=通过；否则错误 reason（409 force_ticket_invalid，单测 8）。S4：校验 channel 绑定。"""
     with state.state_lock:
         t = state.tickets.get(ticket or "")
         if not t or t["used"] or t["expires"] < time.monotonic():
@@ -1028,15 +1141,15 @@ def consume_force_ticket(state, ticket: str, target: dict, channel: str) -> str:
         return ""
 
 
-SNAPSHOT_MAX = 500             # 安全审查：按 sid 存储的内存上限
+SNAPSHOT_MAX = 500             # T-PORT-003 B3：按 sid 存储的内存上限
 
 
 def issue_snapshot_id(state, identity: dict):
-    """：唯一占用时下发，内存 60 秒，绑定 (port,pid,proc,started)。
-    安全审查：按 sid 存储（不再按端口覆盖）——多 AI 并发取同端口指纹互不顶掉。
-    安全审查建议 2：started 为空的占用者不发指纹（指纹的价值就在时间戳，""=="" 会
-    让 started 必填校验整段跳过——阻断级修法不能在 by_port 模式留着这个口子）。
-    安全审查建议 5：超限**拒绝下发**（返回 None），不删有效票据——拿正确性换内存方向错。
+    """§4.9：唯一占用时下发，内存 60 秒，绑定 (port,pid,proc,started)。
+    B3（T-PORT-003）：按 sid 存储（不再按端口覆盖）——多 AI 并发取同端口指纹互不顶掉。
+    复核建议 2：started 为空的占用者不发指纹（指纹的价值就在时间戳，""=="" 会
+    让 B2 的校验整段跳过——阻断级修法不能在 by_port 模式留着这个口子）。
+    复核建议 5：超限**拒绝下发**（返回 None），不删有效票据——拿正确性换内存方向错。
     返回 sid 或 None（None=存储满，调用方应 503）。"""
     if not identity.get("started"):
         return None
@@ -1056,8 +1169,8 @@ def issue_snapshot_id(state, identity: dict):
 
 def verify_snapshot_id(state, port: int, sid: str, current_identity: dict) -> str:
     """返回 ""=有效；target_identity_required=缺失/过期；target_changed=身份不符。
-    安全审查：按 sid 查——假 sid 只作废自己，不牵连同端口其他有效指纹。
-    安全审查建议 2：任一方 started 为空 → target_identity_required（fail closed，
+    B3（T-PORT-003）：按 sid 查——假 sid 只作废自己，不牵连同端口其他有效指纹。
+    复核建议 2：任一方 started 为空 → target_identity_required（fail closed，
     堵 by_port 模式的 ""=="" 口子）。"""
     with state.state_lock:
         rec = state.snapshots.get(sid or "")
@@ -1075,18 +1188,8 @@ def verify_snapshot_id(state, port: int, sid: str, current_identity: dict) -> st
     return "" if same else "target_changed"
 
 
-def check_kill_rate_limit(state, channel: str) -> bool:
-    """：同一通道每分钟 ≤6 次真实强杀；通过返回 True（仅检查，不记账）。"""
-    with state.state_lock:
-        now = time.monotonic()
-        dq = state.kill_rate[channel]
-        while dq and dq[0] < now - KILL_RATE_WINDOW:
-            dq.popleft()
-        return len(dq) < KILL_RATE_LIMIT
-
-
 def try_consume_rate_slot(state, channel: str) -> bool:
-    """安全审查：检查+记账原子化——原 check/record 两把锁之间夹着审计写盘，
+    """S1（T-PORT-003）：检查+记账原子化——原 check/record 两把锁之间夹着审计写盘，
     并发下 N 个请求能同时通过检查（频率闸是防 AI 循环误调的唯一闸门）。False=超限。"""
     with state.state_lock:
         now = time.monotonic()
@@ -1099,13 +1202,8 @@ def try_consume_rate_slot(state, channel: str) -> bool:
         return True
 
 
-def record_kill_rate(state, channel: str) -> None:
-    with state.state_lock:
-        state.kill_rate[channel].append(time.monotonic())
-
-
 # ----------------------------------------------------------------------------
-# 外部关闭命令
+# 外部关闭命令（§6.3/§6.4）
 # ----------------------------------------------------------------------------
 
 
@@ -1124,7 +1222,7 @@ def run_taskkill(pid: int) -> tuple:
 
 
 def tree_member_entry(pid: int, procs_by_pid: dict, started_map: dict, target: dict) -> dict:
-    """安全审查/建议 3（共用）：树成员的 killed 记录取真实 proc/started，
+    """S2/复核建议 3（共用）：树成员的 killed 记录取真实 proc/started，
     不许拿根进程的值充数（审计造假）。UI 与强杀两条路径共用。"""
     info = procs_by_pid.get(pid) or {}
     return {"pid": pid,
@@ -1146,7 +1244,7 @@ def wait_tree_exit(tree_pids: list, window: float, poll: float = 0.4,
 
 
 def remaining_on_port(scan: dict, port: int) -> list:
-    """端口当前占用者（精简）：可能被新进程接管，不得当作已杀目标。"""
+    """端口当前占用者（精简）：可能被新进程接管，不得当作已杀目标（§6.5）。"""
     out, seen = [], set()
     for e in scan["entries"]:
         if e["port"] != port or e["pid"] in seen:
@@ -1182,6 +1280,7 @@ class AppState:
         self.tickets = {}        # ticket -> {port,pid,proc,started,expires,used}
         self.snapshots = {}      # port -> {sid,identity,expires}
         self.kill_rate = {"ui": deque(), "agent": deque()}
+        self.agent_gate = _AgentPortsGate()  # 1.2 改-2：agent/ports 限流+在飞闸
         self.scan_cache = None   # 展示缓存槽 -> {data,at,cached_at_iso}（只喂 GET /ports）
         self.scan_cache_lock = threading.Lock()
         self.index_html = b""
@@ -1195,7 +1294,7 @@ def uptime_seconds(state) -> int:
 
 
 def build_full_entries(state, scan: dict, *, record_unknowns: bool) -> list:
-    """完整端口条目。"""
+    """完整端口条目（§5.4）。"""
     out = []
     for e in scan["entries"]:
         cls = classify_entry(state, e)
@@ -1204,7 +1303,7 @@ def build_full_entries(state, scan: dict, *, record_unknowns: bool) -> list:
         level = cls["level"]
         reason = protection_reason(state, e)
         if reason:
-            level = "system"      # ：安全优先级最高，即使手工命名为 self
+            level = "system"      # §4.3：安全优先级最高，即使手工命名为 self
         out.append({
             "port": e["port"], "addr": e["addr"], "pid": e["pid"],
             "proc": e["proc"], "cmdline": e["cmdline"],
@@ -1214,13 +1313,20 @@ def build_full_entries(state, scan: dict, *, record_unknowns: bool) -> list:
             "protected_reason": reason or "",
             "mapping_stale": cls["mapping_stale"],
         })
-        if record_unknowns and cls["source"] == "unknown":
+        # 1.2 台账过滤：只留"真·未知的可操作目标"。
+        # 旧逻辑 source==unknown 即记账，wininit/services/控制台残影这类受保护项
+        # 也会进 unknown.json（实测台账里就有），挤占 UNKNOWN_MAX=500 上限、稀释信噪比。
+        #   - reason 非空 / level 被压成 system：保护线已拦，不是"待认领"，不记；
+        #   - proc 为空或 "?"：进程快照缺失（刚退出/读不到的残影），记了也无法认领。
+        if (record_unknowns and cls["source"] == "unknown"
+                and not reason and level != "system"
+                and e.get("proc") not in ("", "?")):
             record_unknown(state, e)
     return out
 
 
 def slim_entry(item: dict) -> dict:
-    """：AI 精简条目，默认不含 cmdline/started/session_id。"""
+    """§4.9：AI 精简条目，默认不含 cmdline/started/session_id。"""
     slim = {
         "port": item["port"], "addr": item["addr"], "pid": item["pid"],
         "proc": item["proc"], "name": item["name"], "level": item["level"],
@@ -1232,7 +1338,7 @@ def slim_entry(item: dict) -> dict:
 
 
 def owner_groups(scan: dict, port: int) -> list:
-    """ 步 3：按 (pid, proc, started) 归并占用者（硬要求 7）。"""
+    """§6.2 步 3：按 (pid, proc, started) 归并占用者（硬要求 7）。"""
     groups, seen = [], set()
     for e in scan["entries"]:
         if e["port"] != port:
@@ -1246,7 +1352,7 @@ def owner_groups(scan: dict, port: int) -> list:
 
 
 # ----------------------------------------------------------------------------
-# 关闭核心——UI 与 AI 共用同一 close_target
+# 关闭核心（§6）——UI 与 AI 共用同一 close_target
 # ----------------------------------------------------------------------------
 
 
@@ -1254,8 +1360,8 @@ def scan_or_error() -> dict:
     return normalize_snapshot(scan_snapshot())
 
 
-# 展示缓存 TTL（1.1 设计决策 1）。只服务 GET /api/v1/ports 展示，
-# 与 kill 链路零交集（三层防御见 scan_or_error_cached 与 close_target）。
+# 展示缓存 TTL（T-PORT-004 R3 §4.1：设计决策 1）。只服务 GET /api/v1/ports 展示，
+# 与 kill 链路零交集（V54/V55/V72 三层防御见 scan_or_error_cached 与 close_target）。
 SCAN_CACHE_TTL = 5.0
 
 
@@ -1265,10 +1371,10 @@ def scan_or_error_cached(state, force_fresh: bool = False) -> dict:
     ——手动刷新后轮询拿到的是刷新时的数据，不会"跳回"旧缓存。
     三层防御：
       第一层·物理隔离——本函数无定向参数，只可能缓存全表结果；任何定向/过滤
-      扫描（agent/ports?port=X）走 scan_or_error()，不写也不读缓存。
+      扫描（agent/ports?port=X）走 scan_or_error()，不写也不读缓存（V72）。
       第二层·标记——返回数据带 _cached/_cached_at/_scope:"full"；kill 路径
-      在 close_target 见到 _cached 即 RuntimeError（500，不执行关闭）。
-      第三层·专门测试——单测 54/55/65/66 覆盖。
+      在 close_target 见到 _cached 即 RuntimeError（500，不执行关闭，V55）。
+      第三层·专门测试——单测 54/55/65/66 + 验收 V54/V55/V72/V73。
     ScanError 原样上抛（扫描失败不缓存、不假装成功）。"""
     if not force_fresh:
         now = time.monotonic()
@@ -1292,13 +1398,13 @@ def scan_or_error_cached(state, force_fresh: bool = False) -> dict:
 
 
 def parse_close_request(state, body: dict, mode: str, channel: str):
-    """ 步 3：字段类型与范围校验。布尔值不能冒充整数；字符串 "true" 不合格；
+    """§6.1 步 3：字段类型与范围校验。布尔值不能冒充整数；字符串 "true" 不合格；
     Agent 拒绝 force/force_ticket；按端口模式拒绝身份字段（acceptance 步 5）。"""
     port = body.get("port")
     if not is_int(port) or not (1 <= port <= 65535):
         return 400, "invalid_request", "port 非法", None
     if channel == "agent":
-        # confirm 是 AI 通道（L2）的授权要件；UI 通道（L1）凭同源证据+两阶段，不带 confirm
+        # confirm 是 AI 通道（L2）的授权要件；UI 通道（L1）凭同源证据+两阶段，不带 confirm（§6.1 步1）
         if "confirm" not in body:
             return 400, "confirm_required", "缺少 confirm:true", None
         confirm = body.get("confirm")
@@ -1316,7 +1422,7 @@ def parse_close_request(state, body: dict, mode: str, channel: str):
         proc = body.get("proc")
         if not isinstance(proc, str) or not proc.strip() or len(proc) > 200:
             return 400, "invalid_request", "proc 非法", None
-        # started 必填——四元组才是唯一身份（PID 会复用）
+        # B2（T-PORT-003）：started 必填——四元组才是唯一身份（PID 会复用，方案级修正）
         started = body.get("started")
         if not isinstance(started, str) or not started.strip():
             return 400, "invalid_request", "严格模式必须携带 started 指纹（四元组才是唯一身份）", None
@@ -1333,7 +1439,7 @@ def parse_close_request(state, body: dict, mode: str, channel: str):
 
 
 def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str) -> tuple:
-    """// 状态机核心。返回 (http_code, response_dict)。
+    """§6.1/§6.2/§6.3 状态机核心。返回 (http_code, response_dict)。
     任何校验不过都不触碰外部关闭命令（阶段 C 硬门槛）。"""
     port = clean["port"]
 
@@ -1342,10 +1448,10 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         scan = scan_or_error()
     except ScanError as e:
         return 500, error_body("scan_failed", f"扫描失败: {e}")
-    # 第二层防御：展示缓存若因将来误接线流进 kill 路径，
-    # 缓存里的身份是旧快照——宁可 500 拒绝执行，也不能拿旧身份去杀。
+    # T-PORT-004 R3 第二层防御（V55）：展示缓存若因将来误接线流进 kill 路径，
+    # 缓存里的身份是旧快照——宁可 500 拒绝执行，也不能拿旧身份去杀（工单 §三）。
     if scan.get("_cached"):
-        raise RuntimeError("cached scan data must never enter the kill path ")
+        raise RuntimeError("cached scan data must never enter the kill path (V55)")
 
     # 步 5：解析目标
     if mode == "strict":
@@ -1358,8 +1464,15 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
             return 404, error_body("port_free", "端口上没有该 PID 的监听（可能已退出或易主）")
         if target["proc"].casefold() != clean["proc"].casefold():
             return 409, error_body("target_changed", "进程名与请求不符，目标可能已变化")
-        # 安全审查：started fail-closed——缺失/空一律拒，不再"空则跳过"
+        # B2（T-PORT-003）：started fail-closed——缺失/空一律拒，不再"空则跳过"
         if not clean["started"] or not target["started"]:
+            # 1.2 改-6 文案分流：目标本身 started 不可读（ticks 缺失）时，
+            # 「请重新查询」是死循环话术——重查一万次也读不到。两种情况分开说。
+            if not target["started"]:
+                return 409, error_body(
+                    "target_identity_unavailable",
+                    "该进程启动时间不可读（系统未返回其创建时间，常见于 Session 0/"
+                    "权限不足），无法核验身份；不可对其执行关闭操作")
             return 409, error_body("target_identity_required",
                                    "缺少启动时间指纹，无法确认目标身份，请重新查询")
         if clean["started"] != target["started"]:
@@ -1367,13 +1480,13 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
     else:
         groups = owner_groups(scan, port)
         if not groups:
-            #  步 2：幂等成功，不校验指纹、不写审计、不执行进程操作
+            # §6.2 步 2：幂等成功，不校验指纹、不写审计、不执行进程操作
             return 200, {
                 "ok": True, "port": port, "already_free": True, "target": None,
                 "killed": [], "remaining": [], "message": "端口已空闲",
             }
         if len(groups) > 1:
-            #  步 4：多占用者拒绝，优先于指纹校验（单测 40）
+            # §6.2 步 4：多占用者拒绝，优先于指纹校验（单测 40 / V40）
             by_pid = {f["pid"]: f
                       for f in build_full_entries(state, scan, record_unknowns=False)}
             body = error_body("multiple_owners",
@@ -1391,19 +1504,33 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         if clean.get("snapshot_id"):
             v = verify_snapshot_id(state, port, clean["snapshot_id"], identity)
             if v == "target_identity_required":
+                # 1.2 改-6 文案分流：目标当前 started 不可读时不能叫人「再取指纹」
+                # ——agent/ports 对 started 空的目标不发 sid，AI 会取不到再查再 400
+                if not target["started"]:
+                    return 400, error_body(
+                        "target_identity_unavailable",
+                        "该进程启动时间不可读（系统未返回其创建时间，常见于 Session 0/"
+                        "权限不足），无法核验身份；不可对其执行关闭操作")
                 return 400, error_body("target_identity_required",
                                        "指纹缺失或过期，请先 GET /api/v1/agent/ports?port=X 取指纹")
             if v == "target_changed":
                 return 409, error_body("target_changed",
                                        "指纹绑定身份与当前占用者不符（端口易主或认错端口）")
         else:
-            #  步 5：占用端口必须携带指纹
+            # §6.2 步 5：占用端口必须携带指纹（V41）
+            # 1.2 改-6 文案分流：目标 started 不可读（ticks 缺失）时，agent/ports
+            # 本来就不发 sid，「请先查指纹」会让 AI 陷入取不到→再查→再 400 的循环。
+            if not target["started"]:
+                return 400, error_body(
+                    "target_identity_unavailable",
+                    "该进程启动时间不可读（系统未返回其创建时间，常见于 Session 0/"
+                    "权限不足），无法核验身份；不可对其执行关闭操作")
             return 400, error_body("target_identity_required",
                                    "占用端口必须携带 snapshot_id（先 GET /api/v1/agent/ports?port=X）")
 
     # 步 7：保护检查（level=system 硬拒 / SessionId==0 / System32 / 子树护栏）
-    # 构树换 build_tree_with_session_filter——同一轮全量快照
-    # 内存构树＋"刚退出成员剔除"＋"PPID 复用孤儿剔除（保守三态）"；
+    # T-PORT-004 R3 §4.4：构树换 build_tree_with_session_filter——同一轮全量快照
+    # 内存构树＋"刚退出成员剔除（判据 2）"＋"PPID 复用孤儿剔除（备注 3，保守三态）"；
     # started_map 仍按剔除后的 tree_pids 取（杀后验证防 PID 复用）。
     tree_pids = build_tree_with_session_filter(
         scan["processes"],
@@ -1428,7 +1555,7 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
                     "name": t_full.get("name", ""), "level": t_full.get("level", "unknown"),
                     "source": t_full.get("source", "unknown")}
 
-    # ---------------- UI 第一阶段：礼貌关窗 ----------------
+    # ---------------- UI 第一阶段：礼貌关窗（§6.4） ----------------
     if channel == "ui" and not clean.get("force"):
         try:
             write_audit_event(state, {
@@ -1438,7 +1565,14 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         except OSError as e:
             return 500, error_body("audit_write_failed", f"审计前置事件写盘失败: {e}")
 
-        hwnd = find_main_window_for_pid(target["pid"])
+        # 1.2 审计成对收口：枚举窗口是 Win32 边界，started 已落盘——异常必须补
+        # finished 再返回，杜绝 started 悬空。
+        try:
+            hwnd = find_main_window_for_pid(target["pid"])
+        except Exception as e:
+            write_audit_finished(state, "ui", "wm_close", port, target_label, client_id,
+                                 "failed", [], [], f"internal_error:{type(e).__name__}")
+            return 500, error_body("internal_error", "枚举主窗口失败")
         if hwnd is None:
             ticket = issue_force_ticket(state, target, channel="ui")
             write_audit_finished(state, "ui", "wm_close", port, target_label, client_id,
@@ -1457,9 +1591,15 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
             return (403 if fail_reason == "access_denied" else 500), error_body(
                 fail_reason, "关窗消息发送失败（权限不足或目标拒绝），不升级强杀")
 
-        # PostMessageW 已排队：每 200ms 复核，最多 2 秒
-        tree_alive = wait_tree_exit(tree_pids, WM_CLOSE_WAIT, WM_CLOSE_POLL,
-                                    started_map=started_map)
+        # PostMessageW 已排队：每 200ms 复核，最多 2 秒（§6.4）
+        try:
+            tree_alive = wait_tree_exit(tree_pids, WM_CLOSE_WAIT, WM_CLOSE_POLL,
+                                        started_map=started_map)
+        except Exception as e:
+            # 1.2 审计成对收口：存活轮询走 Win32 句柄，同样是外部边界
+            write_audit_finished(state, "ui", "wm_close", port, target_label, client_id,
+                                 "failed", [], [], f"internal_error:{type(e).__name__}")
+            return 500, error_body("internal_error", "关窗结果复核失败")
         try:
             rescan = scan_or_error()
         except ScanError as e:
@@ -1504,7 +1644,7 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         if terr:
             return 409, error_body(terr, "强杀 ticket 缺失、过期、已复用或不匹配，请回到第一阶段重新确认")
 
-    # 审计前置（安全审查建议 1：前置在扣费之前——already_free/复核拒绝出口不白扣配额；
+    # 审计前置（复核建议 1：前置在扣费之前——already_free/复核拒绝出口不白扣配额；
     # 扣费点挪到本文件下方 taskkill 前的最后一刻，闸门计量的是"杀"，不是"请求"）
     try:
         write_audit_event(state, {
@@ -1514,10 +1654,21 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
     except OSError as e:
         return 500, error_body("audit_write_failed", f"审计前置事件写盘失败: {e}")
 
-    # ★ 杀前实时复核：快照比对只能发现"扫描前"的易主，
+    # ★ B1（T-PORT-003）杀前实时复核：快照比对只能发现"扫描前"的易主，
     #   发现不了"扫描后（含审计 os.fsync 的窗口）"的 PID 复用。此处用【此刻】的
     #   进程创建时间与快照比对（pid_matches_start 三关判定）。
-    if not target["started"] or not pid_matches_start(target["pid"], target["started"]):
+    # 1.2 审计成对收口：started 事件已落盘，pid_matches_start 是 Win32 边界——
+    # 真实 kill_audit.jsonl 里出现过此处之后无 finished 的悬空记录。异常时补一条
+    # failed 再返回 500，不让 started 挂在日志里。
+    try:
+        pre_alive = bool(target["started"]) and pid_matches_start(
+            target["pid"], target["started"])
+    except Exception as e:
+        write_audit_finished(state, channel, "taskkill_tree", port, target_label,
+                             client_id, "failed", [], [],
+                             f"internal_error:{type(e).__name__}")
+        return 500, error_body("internal_error", "杀前身份复核失败")
+    if not pre_alive:
         # False 有两义：目标已自行退出（不用杀）vs PID 被复用（必须拒）。重扫分辨：
         try:
             recheck = scan_or_error()
@@ -1528,7 +1679,7 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         still = remaining_on_port(recheck, port)
         if not still:
             # 目标已退且端口已空：意图已达成（非己力）。审计 result 用 "already_free"
-            # （安全审查核点 4：与 API 响应同词，下游聚合不会误算成"成功强杀一次"）
+            # （复核要点 4：与 API 响应同词，下游聚合不会误算成"成功强杀一次"）
             write_audit_finished(state, channel, "taskkill_tree", port, target_label,
                                  client_id, "already_free", [], [], "port_free")
             return 200, {"ok": True, "port": port, "already_free": True,
@@ -1541,8 +1692,8 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         return 409, error_body("target_changed",
                                "杀前复核失败：目标 PID 已被复用或已变化，拒绝关闭，请重新查询")
 
-    # ★ 安全审查建议 1：扣费点挪到最后一刻——闸门计量的是"杀"，不是"请求"。
-    #   （原位置在审计前置/杀前复核之前，already_free 与审计失败都会白扣配额）
+    # ★ 复核建议 1：扣费点挪到最后一刻——闸门计量的是"杀"，不是"请求"。
+    #   （原位置在审计前置/B1 复核之前，already_free 与审计失败都会白扣配额）
     if not try_consume_rate_slot(state, channel):
         write_audit_finished(state, channel, "taskkill_tree", port, target_label,
                              client_id, "failed", [], [], "rate_limited")
@@ -1550,7 +1701,14 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
                                "触发 kill 频率闸（每分钟 6 次），请检查是否存在调用循环")
 
     _ok, err = run_taskkill(target["pid"])
-    alive = wait_tree_exit(tree_pids, KILL_VERIFY_WINDOW, started_map=started_map)
+    try:
+        alive = wait_tree_exit(tree_pids, KILL_VERIFY_WINDOW, started_map=started_map)
+    except Exception as e:
+        # 1.2 审计成对收口：taskkill 已执行，杀后验证轮询若抛异常，started 必须有 finished
+        write_audit_finished(state, channel, "taskkill_tree", port, target_label,
+                             client_id, "failed", [], [],
+                             f"internal_error:{type(e).__name__}")
+        return 500, error_body("internal_error", "杀后存活验证失败")
     procs_by_pid = scan["processes"]
     try:
         final_scan = scan_or_error()
@@ -1560,12 +1718,12 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         return 500, error_body("scan_failed", f"强杀后验证扫描失败: {e}")
     still = remaining_on_port(final_scan, port)
     exited = [p for p in tree_pids if p not in set(alive)]
-    # 安全审查：killed 填每个成员的真实 proc/started（原实现全填根进程的值，
+    # S2（T-PORT-003）：killed 填每个成员的真实 proc/started（原实现全填根进程的值，
     # 杀 6 棵树的审计里 6 条只有 1 条真信息——出事追责审计会给错误答案）
     killed = [tree_member_entry(p, procs_by_pid, started_map, target) for p in exited]
 
     if not alive and not still:
-        # 安全审查补充：taskkill 返回码进审计——非零也杀干净了时，200 但审计留痕
+        # T-PORT-003：taskkill 返回码进审计——非零也杀干净了时，200 但审计留痕
         write_audit_finished(state, channel, "taskkill_tree", port, target_label, client_id,
                              "succeeded", killed, [], None if _ok else f"taskkill_rc:{err}")
         return 200, success_body(port, target, killed, [], "进程树已结束，端口已释放")
@@ -1596,7 +1754,7 @@ def error_body(reason: str, message: str) -> dict:
 
 def write_audit_finished(state, channel, mode, port, target_label, client_id,
                          result, killed, remaining, reason) -> None:
-    """结果事件写失败：控制台警告，不假装审计成功。"""
+    """结果事件写失败：控制台警告，不假装审计成功（§4.8）。"""
     try:
         write_audit_event(state, {
             "ts": now_iso(), "channel": channel, "mode": mode, "port": port,
@@ -1609,7 +1767,7 @@ def write_audit_finished(state, channel, mode, port, target_label, client_id,
 
 
 # ----------------------------------------------------------------------------
-# rename
+# rename（§7.3）
 # ----------------------------------------------------------------------------
 
 
@@ -1643,7 +1801,7 @@ def rename_port(state, body: dict, client_id: str) -> tuple:
         fingerprint = {"proc": "", "started": ""}
 
     with state.state_lock:
-        old_entry = state.port_map.get(str(port))       # 回滚还原旧映射，不误删
+        old_entry = state.port_map.get(str(port))       # S3：回滚还原旧映射，不误删
         state.port_map[str(port)] = {"name": name, "level": level, **fingerprint}
         try:
             atomic_write_json(state.base_dir / "port_map.json", state.port_map)
@@ -1672,7 +1830,10 @@ def protect_port(state, body: dict, client_id: str) -> tuple:
     try:
         listening = scan_listen_ports()
     except ScanError as e:
-        return 503, error_body("scan_failed", f"扫描失败，无法确认端口监听状态: {e}")
+        # 1.2 改-8：响应体统一稳定话术（L-13 风格）——{e} 可能带 PowerShell
+        # stderr 片段，详情只进服务端 stderr，不出响应体。
+        print(f"[port-console] protect_port 扫描失败: {e}", file=sys.stderr)
+        return 503, error_body("scan_failed", "扫描失败，无法确认端口监听状态，请稍后重试")
     if port not in listening:
         return 400, error_body("not_listening", "端口当前未监听，无从保护")
     with state.state_lock:
@@ -1717,7 +1878,7 @@ def unprotect_port(state, body: dict, client_id: str) -> tuple:
 
 
 # ----------------------------------------------------------------------------
-# HTTP 层
+# HTTP 层（§7）
 # ----------------------------------------------------------------------------
 
 
@@ -1791,7 +1952,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         return "token" in parse_qs(urlsplit(self.path).query)
 
     def _ai_token_ok(self, state) -> bool:
-        """：token 只从请求头读取，hmac.compare_digest 常量时间比较。"""
+        """§4.6：token 只从请求头读取，hmac.compare_digest 常量时间比较。"""
         if not state.token_ok or not state.token:
             return False
         got = self.headers.get(TOKEN_HEADER, "")
@@ -1898,7 +2059,7 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 else:
                     http_code, resp = close_target(state, channel="agent", mode=mode,
                                                    clean=parsed, client_id=self._client_id())
-        except Exception as e:  # 防单请求异常拖垮服务；堆栈只进服务端日志不外泄
+        except Exception as e:  # 防单请求异常拖垮服务；堆栈只进服务端日志不外泄（§6.6）
             print(f"[port-console] handler error: {e!r}", file=sys.stderr)
             traceback.print_exc()
             http_code, resp = 500, error_body("internal_error", "服务内部错误")
@@ -1907,8 +2068,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
     # ---- GET 处理器 ----
 
     def _handle_protection(self, state):
-        # 数据来源换 GetActiveTcpListeners()（~1.2s → ~0.1s）。
-        # protection.json 语义、历史端口判定全部不变；集合一致性保持。
+        # T-PORT-004 R3 §4.6：数据来源换 GetActiveTcpListeners()（~1.2s → ~0.1s）。
+        # protection.json 语义、历史端口判定、V11 判据全部不变；集合一致性 V74。
         try:
             listening = scan_listen_ports()
         except ScanError as e:
@@ -1922,13 +2083,25 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                               "warnings": state.warnings})
 
     def _handle_ports(self, state):
-        """完整条目。同源 UI 返回完整命令行；非同源默认脱敏。
-        展示走 5 秒缓存（data_cached/data_time 透传给前端）；
-        ?refresh=1 绕过缓存强制新鲜扫描（手动刷新不许是假开关）。"""
+        """完整条目。同源 UI 返回完整命令行；非同源默认脱敏（§7.4）。
+        T-PORT-004 R3 §4.1：展示走 5 秒缓存（data_cached/data_time 透传给前端）；
+        ?refresh=1 绕过缓存强制新鲜扫描（必修 4：手动刷新不许是假开关，V73）。"""
         origin, sfs = self._origin_sfs()
         same_origin = has_ui_evidence(origin, sfs, self._actual_port())
         q = parse_qs(urlsplit(self.path).query)
         force_fresh = q.get("refresh", [None])[0] == "1"
+        # 1.2 GET 副作用收口（改-1 白名单谓词版）：?refresh=1 会强制跑一轮 PowerShell
+        # 全表扫描（秒级、起子进程）。/api/v1/ports 是 L0 无 token 端点，任意网页
+        # 都能用 <img src="http://127.0.0.1:3999/api/v1/ports?refresh=1"> 跨站发
+        # 简单 GET——浏览器会执行服务端处理，只是读不到响应。
+        # 收口口径（白名单式，与 agent/ports 同一谓词）：SFS 有值且不在
+        # {same-origin, none} 白名单内（cross-site、same-site、及将来新增取值）
+        # → 降级为缓存查询；本机脚本/CLI/验收（无 SFS 头）、地址栏直达 none、
+        # 同源页面 → 照常强制刷新（端口发现与 21 步验收不能误伤）。
+        refresh_ignored = bool(force_fresh and is_cross_origin_request(
+            origin, sfs, self._actual_port()))
+        if refresh_ignored:
+            force_fresh = False
         try:
             scan = scan_or_error_cached(state, force_fresh=force_fresh)
         except ScanError as e:
@@ -1942,58 +2115,88 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                               "data_cached": bool(scan.get("_cached")),
                               "data_time": scan.get("_cached_at") or now_iso(),
                               "data_scope": scan.get("_scope") or "full",
+                              "refresh_ignored": refresh_ignored,
                               "warnings": state.warnings})
 
     def _handle_agent_ports(self, state):
-        """ 精简条目；port 过滤且唯一占用附 snapshot_id；多占用附 candidates。"""
-        q = parse_qs(urlsplit(self.path).query)
-        port_filter = q.get("port", [None])[0]
-        try:
-            scan = scan_or_error()
-        except ScanError as e:
-            self._send_json(500, error_body("scan_failed", f"扫描失败: {e}"))
+        """§4.9 精简条目；port 过滤且唯一占用附 snapshot_id；多占用附 candidates。
+        1.2 改-2 收口：403（跨源）→ 429（限流）→ 503（在飞满）→ 才扫描；
+        匿名请求降为纯只读（不发 snapshot_id、不写 unknown 台账），
+        响应带 authenticated 供调用方自辨语义。"""
+        origin, sfs = self._origin_sfs()
+        if is_cross_origin_request(origin, sfs, self._actual_port()):
+            # 403 在路由层返回：不进入任何扫描/记账/关闭路径（裁定 §六）
+            self._send_json(403, error_body(
+                "cross_origin_forbidden",
+                "浏览器跨源请求已拒绝（本端点只服务本机程序）"))
             return
-        full = build_full_entries(state, scan, record_unknowns=True)
-        if port_filter is not None:
+        authenticated = self._ai_token_ok(state)
+        if not state.agent_gate.try_acquire(authenticated):
+            limit = AGENT_PORTS_RATE_TOKEN if authenticated else AGENT_PORTS_RATE_ANON
+            kind = "带 token" if authenticated else "匿名"
+            self._send_json(429, error_body(
+                "rate_limited",
+                f"agent/ports {kind}请求超过 {limit} 次/分钟，请稍后重试"))
+            return
+        if not state.agent_gate.try_enter_inflight():
+            self._send_json(503, error_body(
+                "inflight_full",
+                f"在飞全表扫描已达并发上限（{AGENT_PORTS_MAX_INFLIGHT}），请稍后重试"))
+            return
+        try:
+            q = parse_qs(urlsplit(self.path).query)
+            port_filter = q.get("port", [None])[0]
             try:
-                pf = int(port_filter)
-            except ValueError:
-                self._send_json(400, error_body("invalid_request", "port 参数必须为整数"))
+                scan = scan_or_error()
+            except ScanError as e:
+                self._send_json(500, error_body("scan_failed", f"扫描失败: {e}"))
                 return
-            if not (1 <= pf <= 65535):
-                self._send_json(400, error_body("invalid_request", "port 参数超出 1..65535"))
-                return
-            full = [f for f in full if f["port"] == pf]
+            # 1.2 改-2：unknown 台账只由带 token 的请求记账（匿名纯只读，不写盘）
+            full = build_full_entries(state, scan, record_unknowns=authenticated)
+            if port_filter is not None:
+                try:
+                    pf = int(port_filter)
+                except ValueError:
+                    self._send_json(400, error_body("invalid_request", "port 参数必须为整数"))
+                    return
+                if not (1 <= pf <= 65535):
+                    self._send_json(400, error_body("invalid_request", "port 参数超出 1..65535"))
+                    return
+                full = [f for f in full if f["port"] == pf]
 
-        items = [slim_entry(f) for f in full]
-        resp = {"ok": True, "items": items, "generated_at": now_iso(),
-                "warnings": state.warnings}
+            items = [slim_entry(f) for f in full]
+            resp = {"ok": True, "items": items, "generated_at": now_iso(),
+                    "authenticated": authenticated,
+                    "warnings": state.warnings}
 
-        if port_filter is not None:
-            groups = owner_groups(scan, int(port_filter))
-            if len(groups) == 1:
-                e = groups[0]
-                if e["started"]:
+            if port_filter is not None:
+                groups = owner_groups(scan, int(port_filter))
+                if len(groups) == 1:
+                    e = groups[0]
                     # started 空的占用者不发指纹（503 语义只留给存储满；
-                    # started 不可读目标已由 protection_reason fail closed 拦杀）
-                    sid = issue_snapshot_id(state, {"port": e["port"], "pid": e["pid"],
-                                                    "proc": e["proc"], "started": e["started"]})
-                    if sid is None:
-                        # 安全审查建议 5：存储满 fail closed——拒绝下发，不挤有效票据
-                        self._send_json(503, error_body(
-                            "snapshot_store_full",
-                            "指纹存储已满，请稍后重试取指纹"))
-                        return
-                    for it in items:
-                        it["snapshot_id"] = sid
-            elif len(groups) > 1:
-                by_pid = {f["pid"]: f for f in full}
-                resp["candidates"] = [{
-                    "port": e["port"], "addr": e["addr"], "pid": e["pid"],
-                    "proc": e["proc"], "name": by_pid.get(e["pid"], {}).get("name", ""),
-                    "level": by_pid.get(e["pid"], {}).get("level", "unknown"),
-                    "kill_allowed": by_pid.get(e["pid"], {}).get("kill_allowed", False),
-                } for e in groups]
+                    # started 不可读目标已由 protection_reason fail closed 拦杀）。
+                    # 1.2 改-2：匿名请求不发指纹——纯只读，不进票据面。
+                    if e["started"] and authenticated:
+                        sid = issue_snapshot_id(state, {"port": e["port"], "pid": e["pid"],
+                                                        "proc": e["proc"], "started": e["started"]})
+                        if sid is None:
+                            # 复核建议 5：存储满 fail closed——拒绝下发，不挤有效票据
+                            self._send_json(503, error_body(
+                                "snapshot_store_full",
+                                "指纹存储已满，请稍后重试取指纹"))
+                            return
+                        for it in items:
+                            it["snapshot_id"] = sid
+                elif len(groups) > 1:
+                    by_pid = {f["pid"]: f for f in full}
+                    resp["candidates"] = [{
+                        "port": e["port"], "addr": e["addr"], "pid": e["pid"],
+                        "proc": e["proc"], "name": by_pid.get(e["pid"], {}).get("name", ""),
+                        "level": by_pid.get(e["pid"], {}).get("level", "unknown"),
+                        "kill_allowed": by_pid.get(e["pid"], {}).get("kill_allowed", False),
+                    } for e in groups]
+        finally:
+            state.agent_gate.leave_inflight()
         self._send_json(200, resp)
 
     # ---- POST 处理器 ----
@@ -2015,12 +2218,12 @@ class ConsoleHandler(BaseHTTPRequestHandler):
 
 
 # ----------------------------------------------------------------------------
-# 启动区
+# 启动区（§9）
 # ----------------------------------------------------------------------------
 
 
 def acquire_instance_lock(base_dir: Path):
-    """：msvcrt.locking LK_NBLCK；锁随进程生命周期，锁文件残留不代表有实例。"""
+    """§9.1：msvcrt.locking LK_NBLCK；锁随进程生命周期，锁文件残留不代表有实例。"""
     fd = os.open(str(base_dir / "instance.lock"), os.O_CREAT | os.O_RDWR)
     try:
         msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
@@ -2047,9 +2250,9 @@ def runtime_status(base_dir: Path) -> tuple:
 
 
 def handle_existing_instance(base_dir: Path) -> None:
-    """：锁被占 → 验证现有实例；健康则打开页面退出；等待 1 秒重试一次；
+    """§9.1：锁被占 → 验证现有实例；健康则打开页面退出；等待 1 秒重试一次；
     仍失败明确报错退出，不删锁、不接管。
-    安全审查：第二次取锁成功时**持锁返回**（调用方继续启动），
+    S5（T-PORT-003）：第二次取锁成功时**持锁返回**（调用方继续启动），
     不得静默退出——原实现无条件 return 导致服务不启动。"""
     _e, pid_ok, health, base = runtime_status(base_dir)
     if pid_ok and health and base:
@@ -2071,7 +2274,7 @@ def handle_existing_instance(base_dir: Path) -> None:
 
 def clear_stale_runtime(base_dir: Path) -> None:
     """锁成功后检查 runtime.json：PID 不存在或健康不通 → 移到唯一名陈旧件继续。
-    不得根据陈旧 PID 杀任何进程。"""
+    不得根据陈旧 PID 杀任何进程（V23）。"""
     exists, pid_ok, health, _base = runtime_status(base_dir)
     if not exists:
         return
@@ -2087,7 +2290,7 @@ def clear_stale_runtime(base_dir: Path) -> None:
 
 
 def find_available_port() -> int:
-    """：从 3999 起；仅占用才顺延，其他错误直接失败。"""
+    """§9.1：从 3999 起；仅占用才顺延，其他错误直接失败。"""
     for p in range(DEFAULT_PORT, DEFAULT_PORT + PORT_SCAN_RANGE):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -2103,7 +2306,7 @@ def find_available_port() -> int:
 
 
 def ensure_token_file(base_dir: Path) -> tuple:
-    """：首次启动生成 token_urlsafe(32)；内容非法 → L2 关闭（token_ok=False）。"""
+    """§4.6：首次启动生成 token_urlsafe(32)；内容非法 → L2 关闭（token_ok=False）。"""
     path = base_dir / "api_token.txt"
     if not path.exists():
         token = secrets.token_urlsafe(32)
@@ -2140,7 +2343,7 @@ def write_runtime_info(base_dir: Path, port: int) -> None:
 
 
 def cleanup_runtime(base_dir: Path) -> None:
-    """：只删自己写的 runtime.json（核对 pid），不误删其他实例运行文件。"""
+    """§9.3：只删自己写的 runtime.json（核对 pid），不误删其他实例运行文件。"""
     rt = _inside(base_dir, base_dir / "runtime.json")
     try:
         data = read_json_file(rt)
@@ -2164,7 +2367,7 @@ def main() -> None:
 
     lock_fd = acquire_instance_lock(BASE_DIR)
     if lock_fd is None:
-        # 安全审查：二次取锁成功则持锁返回并继续启动；失败/已有实例则内部退出
+        # S5（T-PORT-003）：二次取锁成功则持锁返回并继续启动；失败/已有实例则内部退出
         handle_existing_instance(BASE_DIR)
     clear_stale_runtime(BASE_DIR)
 
@@ -2191,8 +2394,8 @@ def main() -> None:
     print(f"[port-console] 端口控制台已启动: {base_url}/")
     print(f"[port-console] L2 token 文件: {BASE_DIR / 'api_token.txt'}（仅本机 AI 部署读取，请勿分享）")
     print("[port-console] 退出：在本窗口按 Ctrl+C，或直接关闭本窗口。")
-    # 验收配套：PORT_CONSOLE_NO_BROWSER=1 抑制自动开页面——
-    # acceptance 起服务时浏览器轮询会与服务端展示缓存抢状态，断言不可控。
+    # T-PORT-005 验收配套（偏离申报项）：PORT_CONSOLE_NO_BROWSER=1 抑制自动开页面——
+    # acceptance 起服务时浏览器轮询会与服务端展示缓存抢状态，V58 断言不可控。
     try:
         if os.environ.get("PORT_CONSOLE_NO_BROWSER") != "1":
             webbrowser.open(base_url)
