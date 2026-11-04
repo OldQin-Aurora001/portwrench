@@ -16,5 +16,6 @@ __pycache__/
 *.bak-*
 pcon-*.stale
 pcon-*.tmp
+_svc_out*.txt
 # 未来薄壳 npm 依赖
 node_modules/

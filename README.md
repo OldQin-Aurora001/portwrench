@@ -1,4 +1,8 @@
+<p align="center"><img src="icon.png" width="96" alt="PortWrench 铃铛扳手"></p>
+
 [English](README.en.md) · 中文
+
+<p align="center"><code>MIT License</code> &nbsp;·&nbsp; <code>Python 3.10+</code> &nbsp;·&nbsp; <code>Windows</code> &nbsp;·&nbsp; <code>零第三方依赖</code> &nbsp;·&nbsp; <code>只绑 127.0.0.1</code></p>
 
 # PortWrench · 端口扳手
 
@@ -25,8 +29,57 @@ C:\> netstat -ano | findstr :3000
 让 AI 快速看清事情的边界，是帮你完成工作最初的一步。  
 一款能够被经常使用的工具，不光要趁手，更重要的是安全。
 
-| 本工具项目历版流程 | 立项诉求 → 方案撰写 → 双侧双盲 diff → 第三方纯盲交叉 diff → 落码实现 → 代码审查 → 真机实测 |
-|---|---|
+> **本工具项目历版流程**：立项诉求 → 方案撰写 → 双侧双盲 diff → 第三方纯盲交叉 diff → 落码实现 → 代码审查 → 真机实测
+
+---
+
+## 界面一览
+
+<p align="center">
+  <img src="assets/截图/ScreenShot_2026-11-01_191715_797_地址脱敏.png" width="900" alt="端口总表：归属、级别、可杀一目了然"><br>
+  <sub>全表：端口 · 地址 · 进程 · 归属 · 级别 · 启动时间 · 操作。红色「系统」档为受保护目标，按钮直接禁用。</sub>
+</p>
+
+<p align="center">
+  <img src="assets/截图/ScreenShot_2026-11-01_191845_385.png" width="900" alt="详情：命令行已脱敏，保护原因写明"><br>
+  <sub>展开详情：命令行按本机脱敏，杀不掉时把<code>保护原因</code>写清楚——是边界，不是故障。</sub>
+</p>
+
+---
+
+## 本文目录
+
+- [界面一览](#界面一览)
+- [设计初衷](#设计初衷)
+  - [🎯 为人设计，也为 AI 设计](#-为人设计也为-ai-设计)
+  - [🛡️ 动手前，再确认它还是原来那个](#️-动手前再确认它还是原来那个)
+  - [🗣️ 它说人话](#️-它说人话)
+  - [🚫 它拒绝做某些事](#-它拒绝做某些事)
+  - [📋 每一次操作都留痕](#-每一次操作都留痕)
+  - [⚡ 零依赖](#-零依赖)
+- [它不是什么](#它不是什么)
+- [安装与运行](#安装与运行)
+  - [方式一：双击启动（最简单）](#方式一双击启动最简单)
+  - [方式二：命令行启动](#方式二命令行启动)
+  - [给 AI 用：`portctl.py`](#给-ai-用portctlpy)
+- [隐私](#隐私)
+- [使用与安全说明](#使用与安全说明)
+- [1. 运行身份（安全边界之一）](#1-运行身份安全边界之一)
+- [2. 关闭能力与两道确认](#2-关闭能力与两道确认)
+- [3. 保护线（谁都不许杀）](#3-保护线谁都不许杀)
+- [4. token 与凭据安全](#4-token-与凭据安全)
+- [5. L1 威胁模型边界（务必读）](#5-l1-威胁模型边界务必读)
+  - [5.1 展示缓存与手动刷新](#51-展示缓存与手动刷新)
+- [6. AI 接入（AI 看这里）](#6-ai-接入ai-看这里)
+  - [6.1 地址发现](#61-地址发现)
+  - [6.2 只读查询（L0，无 token）](#62-只读查询l0无-token)
+  - [6.3 关闭：固定口径「先查后杀」](#63-关闭固定口径先查后杀)
+  - [6.4 调用方标签](#64-调用方标签)
+  - [6.5 端口对照表读表约定](#65-端口对照表读表约定)
+- [7. 审计日志（只落盘，不做历史界面）](#7-审计日志只落盘不做历史界面)
+- [8. 配置维护（改完重启控制台生效）](#8-配置维护改完重启控制台生效)
+- [9. 常见问题](#9-常见问题)
+- [目录结构（发布版）](#目录结构发布版)
 
 ---
 
@@ -161,14 +214,14 @@ AI 也可以直接调 HTTP API，见 [§6](#6-ai-接入ai-看这里)。
 
 ---
 
-### 1. 运行身份（安全边界之一）
+## 1. 运行身份（安全边界之一）
 
 - **普通权限是支持口径**。遇到权限不足时工具只返回明确错误，不自动提权。
 - 以管理员运行会**扩大可操作范围**（能读到更多进程信息、能向更高权限进程发消息），  
   但**不获得额外安全承诺**：系统关键进程与关键端口仍然一律拒绝关闭。
 - 不写注册表、不改防火墙、不访问外网、不做开机自启、不做托盘常驻。
 
-### 2. 关闭能力与两道确认
+## 2. 关闭能力与两道确认
 
 - UI 通道两阶段：先尝试正常关窗（`WM_CLOSE`）；未完成才允许强杀，强杀需第二次确认。
 - AI 通道单次直达：持管理 token + `confirm:true`，但杀前重扫、身份校验、系统/子树护栏、  
@@ -176,7 +229,7 @@ AI 也可以直接调 HTTP API，见 [§6](#6-ai-接入ai-看这里)。
 - **一律不做**：一键全杀、按名称清理、按归属批量关闭、对无端口进程的操作。
 - 关闭动作只对「当前正在监听该端口」的进程树生效；杀必杀树（`taskkill /T /F`）。
 
-### 3. 保护线（谁都不许杀）
+## 3. 保护线（谁都不许杀）
 
 1. `protection.json` 里的端口与进程（135/445/3389 等系统端口与关键宿主）；
 2. 控制台自身进程与自身端口；
@@ -191,7 +244,7 @@ AI 也可以直接调 HTTP API，见 [§6](#6-ai-接入ai-看这里)。
 > 端口控制台会把它当受保护目标、不允许从面板强杀。请用 `services.msc`、  
 > `sc stop` 或服务管理器来停服务；这是刻意的安全边界，不是缺陷。
 
-### 4. token 与凭据安全
+## 4. token 与凭据安全
 
 - `api_token.txt` 是 **L2 程序化关闭**的唯一凭据：首次启动自动生成（`token_urlsafe(32)`）。
 - 它**等同于本机授权**：不进仓库、不截图、不放共享目录、不写进任何会发出去的文件。
@@ -200,13 +253,16 @@ AI 也可以直接调 HTTP API，见 [§6](#6-ai-接入ai-看这里)。
 - 轮换：停控制台 → 删除或替换 `api_token.txt` → 重启 → 同步给获授权 AI。
 - `.gitignore` 已含 `api_token.txt`、`runtime.json`、`kill_audit.jsonl*`、`instance.lock`。
 
-### 5. L1 威胁模型边界（务必读）
+## 5. L1 威胁模型边界（务必读）
 
 UI 通道的「同源证据」（Origin / Sec-Fetch-Site）只防**浏览器侧**的跨站请求与 DNS rebinding。  
 本机任意脚本可以伪造同源头调用 `/api/v1/ui/*`——所以：
 
 - **程序化调用必须走 `/api/v1/agent/*` + token**，不要模仿浏览器去打 UI 通道；
 - 这是**单用户本机信任模型**：适合个人电脑，不适合多用户机器。
+
+<details>
+<summary><b>七条安全边界增补（原文照录，未作改动）</b> — 评审与交叉审查留下的硬话，点开看</summary>
 
 > ⚠️ **多用户边界（安全边界增补）**：`127.0.0.1` 是**全 Windows 账户共享**的。  
 > 如果这台机器将来加了第二个 Windows 账户，UI 通道等于对其他用户开放「无 token 强杀」能力——  
@@ -240,7 +296,9 @@ UI 通道的「同源证据」（Origin / Sec-Fetch-Site）只防**浏览器侧*
 > `taskkill /T` 执行之前，目标若新建子进程，快照看不到，会被连带杀掉。  
 > **杀前快照 ≠ 绝对实时**，本工具不宣称绝对保证。
 
-#### 5.1 展示缓存与手动刷新
+</details>
+
+### 5.1 展示缓存与手动刷新
 
 - `GET /api/v1/ports` 展示走 **5 秒缓存**：命中返回 `data_cached:true`＋`data_time`  
   （数据时间），页面状态栏会显示「缓存数据，最长可能滞后 5 秒」。
@@ -253,15 +311,17 @@ UI 通道的「同源证据」（Origin / Sec-Fetch-Site）只防**浏览器侧*
 - 下发指纹的 `GET /api/v1/agent/ports?port=X` **永远不吃缓存**（缓存里的指纹锚定  
   过去那个占用者，AI 会拿到注定 409 的凭据）。
 
-### 6. AI 接入（AI 看这里）
+## 6. AI 接入（AI 看这里）
 
-#### 6.1 地址发现
+### 6.1 地址发现
 
-1. 先访问默认 `http://127.0.0.1:3999/api/v1/health`；
-2. 不通再读本目录 `runtime.json` 的 `base_url`（它不含 token）；
-3. 禁止遍历端口扫描找控制台。
+1. 先读本目录 `runtime.json` 的 `base_url`（它不含 token；写在监听成功之后）；
+2. 没有 `runtime.json` 或它已过期（pid 不在）时，用 `python portctl.py health`
+   —— 它内置**有界发现**：3999–4098 逐个验身份；
+3. **别自己写循环扫区间**（AI/人都不写）：只准用 `portctl.py` 或本条 HTTP 口径。
+   「3999 不通」不等于「服务没起」——被占会自动顺延，真实端口在 runtime.json 里。
 
-#### 6.2 只读查询（L0，无 token）
+### 6.2 只读查询（L0，无 token）
 
 ```
 GET /api/v1/agent/ports            # 精简列表（省 token：不返回命令行）
@@ -269,7 +329,7 @@ GET /api/v1/agent/ports?port=3977  # 精查一个端口；唯一占用时附 sna
 GET /api/v1/ports                  # 完整条目（命令行默认脱敏；同源 UI 才看全量）
 ```
 
-#### 6.3 关闭：固定口径「先查后杀」
+### 6.3 关闭：固定口径「先查后杀」
 
 ```
 GET  /api/v1/agent/ports?port=X     → 看 name/level/kill_allowed，确认这就是要清的目标
@@ -286,12 +346,12 @@ Header: X-Port-Console-Token: <token>   （可选 X-Port-Console-Client: zcode/d
 - 触发频率闸 → `429 rate_limited`（每通道每分钟 6 次真实强杀上限；`already_free` 不计入）。
 - 只有 `ok=true 且 remaining=[]` 才算「关干净」。
 
-#### 6.4 调用方标签
+### 6.4 调用方标签
 
 Agent 请求建议带 `X-Port-Console-Client`（任意短标识，如 `zcode`、`cursor`、`my-agent`），审计日志按它区分是谁动的手；  
 缺省记 `unknown`。
 
-#### 6.5 端口对照表读表约定
+### 6.5 端口对照表读表约定
 
 `ports.json` / `ports.md` 是**知识层**数据文件（只答「这个端口通常是什么」）：
 
@@ -305,11 +365,11 @@ Agent 请求建议带 `X-Port-Console-Client`（任意短标识，如 `zcode`、
 **识别率口径**：分母＝唯一监听目标数（按 `(pid,proc,started)` 归并）；
 「真认出」＝`source=auto` 且 `name` 非空且 `≠「系统」`（「系统」标签是保护兜底，
 不算认谁家）。**真认出 ≥70% 为达标线**（原 80%
-不上进程指纹库不现实）；1.0.1 时 21 条规则下实测约 54%（1.1.1 起维持 21 条示例规则，
+不上进程指纹库不现实）；1.0.1 时 21 条规则下实测约 54%（近版维持 21 条示例规则，
 识别率未重测），**不宣称达标**，缺口靠后续补常见软件规则。二期「纯 ctypes
 大改」与本判据无关，文档一律写「2.0 / ctypes 重构」避免撞名。
 
-### 7. 审计日志（只落盘，不做历史界面）
+## 7. 审计日志（只落盘，不做历史界面）
 
 `kill_audit.jsonl`：每次真实关闭动作的前后各落一行（时间/通道/端口/目标归属/结果）。
 
@@ -317,7 +377,7 @@ Agent 请求建议带 `X-Port-Console-Client`（任意短标识，如 `zcode`、
 - 超过 1MiB 自动轮转，最多保留 3 个备份；
 - `already_free` 幂等成功不属于真实关闭，不写审计。
 
-### 8. 配置维护（改完重启控制台生效）
+## 8. 配置维护（改完重启控制台生效）
 
 | 文件                        | 作用                                                                   |
 | ------------------------- | -------------------------------------------------------------------- |
@@ -342,7 +402,7 @@ Agent 请求建议带 `X-Port-Console-Client`（任意短标识，如 `zcode`、
 - 配置损坏时：`rules.json`/`protection.json` 拒绝启动；`port_map.json`/`unknown.json`  
   保留副本后新建，并在页面顶部提示。
 
-### 9. 常见问题
+## 9. 常见问题
 
 - **为什么杀了进程端口还占着？** 看返回里的 `remaining`——可能是父进程退出但子进程残留，  
   或端口被新进程接管；按 `remaining` 里的当前占用者重新确认，工具不会拿旧快照追杀新进程。
@@ -393,15 +453,15 @@ tests/                     # 单元测试 + 端到端验收
 
 <div align="center">
 
-<img src="assets/team/avatar-turbo.png" width="120" alt="豆总 Turbo"> <img src="assets/team/avatar-pro.png" width="120" alt="Pro 总"> <img src="assets/team/avatar-xiaoniu.png" width="120" alt="小牛总"> <img src="assets/team/avatar-xiaoa.png" width="120" alt="小阿总">
+<img src="assets/team/avatar-turbo.png" width="96" alt="豆总 Turbo"> <img src="assets/team/avatar-pro.png" width="96" alt="Pro 总"> <img src="assets/team/avatar-xiaoniu.png" width="96" alt="小牛总"> <img src="assets/team/avatar-xiaoa.png" width="96" alt="小阿总">
 
 <sub><b>豆总 Turbo</b>　<b>Pro 总</b>　<b>小牛总</b>　<b>小阿总</b></sub>
 
-<img src="assets/team/avatar-daa.png" width="120" alt="大阿总"> <img src="assets/team/avatar-daniu.png" width="120" alt="大牛总"> <img src="assets/team/avatar-xiaoshen.png" width="120" alt="小深"> <img src="assets/team/avatar-ashu.png" width="120" alt="枢儿">
+<img src="assets/team/avatar-daa.png" width="96" alt="大阿总"> <img src="assets/team/avatar-daniu.png" width="96" alt="大牛总"> <img src="assets/team/avatar-xiaoshen.png" width="96" alt="小深"> <img src="assets/team/avatar-ashu.png" width="96" alt="枢儿">
 
 <sub><b>大阿总</b>　<b>大牛总</b>　<b>小深</b>　<b>枢儿</b></sub>
 
-<img src="assets/team/avatar-neko.png" width="120" alt="Neko"> <img src="assets/team/avatar-azi.png" width="120" alt="阿紫"> <img src="assets/team/avatar-laoqin.png" width="120" alt="老秦"> <img src="assets/team/avatar-laodou.png" width="120" alt="老豆总">
+<img src="assets/team/avatar-neko.png" width="96" alt="Neko"> <img src="assets/team/avatar-azi.png" width="96" alt="阿紫"> <img src="assets/team/avatar-laoqin.png" width="96" alt="老秦"> <img src="assets/team/avatar-laodou.png" width="96" alt="老豆总">
 
 <sub><b>Neko</b>　<b>阿紫</b>　<b>老秦</b>　<b>老豆总</b></sub>
 

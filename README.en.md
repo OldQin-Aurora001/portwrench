@@ -1,4 +1,8 @@
+<p align="center"><img src="icon.png" width="96" alt="PortWrench bell"></p>
+
 English · [中文](README.md)
+
+<p align="center"><code>MIT License</code> &nbsp;·&nbsp; <code>Python 3.10+</code> &nbsp;·&nbsp; <code>Windows only</code> &nbsp;·&nbsp; <code>Zero third-party dependencies</code> &nbsp;·&nbsp; <code>Loopback only (127.0.0.1)</code></p>
 
 # PortWrench
 
@@ -9,7 +13,6 @@ This is the English translation of README.md. If there is any inconsistency, the
 > **PortWrench** makes it easier for AI to manage your ports and greatly reduces the risk of killing the wrong process. It improves accuracy while saving time and tokens.
 
 ---
-
 
 
 ```
@@ -29,8 +32,57 @@ You  ▸ ……
 Helping AI see the boundaries of a task quickly is the first step in getting your work done.  
 A tool that can be used often must not only be handy; more importantly, it must be safe.
 
-| Workflow followed across this project's versions | Project brief → proposal drafting → two-sided blind diff → independent third-party cross-diff → implementation → code review → real-machine testing |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+> **Workflow followed across this project's versions**: Project brief → proposal drafting → two-sided blind diff → independent third-party cross-diff → implementation → code review → real-machine testing
+
+---
+
+## Contents
+
+- [Interface at a glance](#interface-at-a-glance)
+- [Design Intent](#design-intent)
+  - [🎯 Designed for people, and for AI too](#-designed-for-people-and-for-ai-too)
+  - [🛡️ Before acting, confirm it is still the same one](#️-before-acting-confirm-it-is-still-the-same-one)
+  - [🗣️ It speaks plainly](#️-it-speaks-plainly)
+  - [🚫 Things it refuses to do](#-things-it-refuses-to-do)
+  - [📋 Every operation leaves an audit log](#-every-operation-leaves-an-audit-log)
+  - [⚡ Zero dependencies](#-zero-dependencies)
+- [What it is not](#what-it-is-not)
+- [Installation and Running](#installation-and-running)
+  - [Option 1: Launch by double-click (simplest)](#option-1-launch-by-double-click-simplest)
+  - [Option 2: Launch from the command line](#option-2-launch-from-the-command-line)
+  - [For AI: `portctl.py`](#for-ai-portctlpy)
+- [Privacy](#privacy)
+- [Usage and Safety Notes](#usage-and-safety-notes)
+- [1. Run identity (one of the safety boundaries)](#1-run-identity-one-of-the-safety-boundaries)
+- [2. Closing capability and two confirmations](#2-closing-capability-and-two-confirmations)
+- [3. Protection rules (nobody may kill these)](#3-protection-rules-nobody-may-kill-these)
+- [4. token and credential security](#4-token-and-credential-security)
+- [5. L1 threat model boundary (must read)](#5-l1-threat-model-boundary-must-read)
+  - [5.1 Display cache and manual refresh](#51-display-cache-and-manual-refresh)
+- [6. AI access (AI: read this)](#6-ai-access-ai-read-this)
+  - [6.1 Address discovery](#61-address-discovery)
+  - [6.2 Read-only queries (L0, no token)](#62-read-only-queries-l0-no-token)
+  - [6.3 Closing: the fixed rule "check first, then kill"](#63-closing-the-fixed-rule-check-first-then-kill)
+  - [6.4 Caller tag](#64-caller-tag)
+  - [6.5 Rules for reading the port reference tables](#65-rules-for-reading-the-port-reference-tables)
+- [7. Audit log (written to disk only, no history UI)](#7-audit-log-written-to-disk-only-no-history-ui)
+- [8. Configuration maintenance (restart the console after changes)](#8-configuration-maintenance-restart-the-console-after-changes)
+- [9. FAQ](#9-faq)
+- [Directory structure (release build)](#directory-structure-release-build)
+
+---
+
+## Interface at a glance
+
+<p align="center">
+  <img src="assets/截图/ScreenShot_2026-11-01_191715_797_地址脱敏.png" width="900" alt="Full port table: owner, tier, killable at a glance"><br>
+  <sub>Every listener: port · address · process · owner · tier · start time · actions. Red "System" rows are protected targets with the button disabled.</sub>
+</p>
+
+<p align="center">
+  <img src="assets/截图/ScreenShot_2026-11-01_191845_385.png" width="900" alt="Detail view: command line redacted, protection reason stated"><br>
+  <sub>Detail view: the command line is redacted for this machine, and when a target cannot be closed the <code>protection reason</code> is spelled out—it is a boundary, not a failure.</sub>
+</p>
 
 ---
 
@@ -165,21 +217,21 @@ It also provides a stable loopback HTTP API for local AI clients such as ZCode a
 
 ---
 
-### 1. Run identity (one of the safety boundaries)
+## 1. Run identity (one of the safety boundaries)
 
 - **Standard user permissions are the supported baseline.** If permissions are insufficient, the tool returns a clear error; it does not elevate privileges automatically.
 - Running as administrator **widens the operable range** (it can read more process information and can send messages to higher-privilege processes),  
   but **does not provide additional safety guarantees**: critical system processes and ports are still always protected from closure.
 - No registry writes, no firewall changes, no external network access, no auto-start on boot, no tray process.
 
-### 2. Closing capability and two confirmations
+## 2. Closing capability and two confirmations
 
 - UI channel: two stages. It first attempts a normal window close (`WM_CLOSE`); only if that does not complete is a force kill allowed, and force kill requires a second confirmation.
 - AI channel: a single direct operation with an admin token and `confirm:true`. It still performs a fresh scan before killing, verifies identity, checks system and process-tree protections, and verifies the result afterward—**only human approval is skipped; no safety checks are**.
 - **Never supported**: one-click kill-all, cleanup by process name, bulk closure by ownership, or operations on processes with no listening port.
 - Closing applies only to the process tree whose root is currently listening on the specified port; the entire tree is killed (`taskkill /T /F`).
 
-### 3. Protection rules (nobody may kill these)
+## 3. Protection rules (nobody may kill these)
 
 1. Ports and processes listed in `protection.json` (including system ports such as 135/445/3389 and critical host processes);
 2. The console's own process and its own port;
@@ -194,7 +246,7 @@ It also provides a stable loopback HTTP API for local AI clients such as ZCode a
 > PortWrench treats it as a protected target and will not allow force-killing it from the panel. Use `services.msc`,  
 > `sc stop`, or Service Manager to stop it. This is an intentional safety boundary, not a defect.
 
-### 4. token and credential security
+## 4. token and credential security
 
 - `api_token.txt` is the only credential for **L2 programmatic closure**; it is generated on first launch (`token_urlsafe(32)`).
 - It is **equivalent to authorization on this machine**: do not commit it, screenshot it, put it in a shared directory, or include it in any file that will be sent out.
@@ -203,7 +255,7 @@ It also provides a stable loopback HTTP API for local AI clients such as ZCode a
 - To rotate: stop the console → delete or replace `api_token.txt` → restart → update authorized AI clients.
 - `.gitignore` includes `api_token.txt`, `runtime.json`, `kill_audit.jsonl*`, and `instance.lock`.
 
-### 5. L1 threat model boundary (must read)
+## 5. L1 threat model boundary (must read)
 
 The UI channel's same-origin evidence (`Origin` / `Sec-Fetch-Site`) protects only against **browser-side** cross-site requests and DNS rebinding.  
 Any local script can forge same-origin headers and call `/api/v1/ui/*`—therefore:
@@ -211,6 +263,9 @@ Any local script can forge same-origin headers and call `/api/v1/ui/*`—therefo
 - **Programmatic calls must use `/api/v1/agent/*` + token**; do not imitate a browser and call the UI channel.
 - This is a **single-user, local-machine trust model**: suitable for a personal computer, not a multi-user machine.
 
+
+<details>
+<summary><b>Seven safety-boundary addenda (quoted verbatim from the original)</b> — hard words left by review and cross-audit; expand to read</summary>
 
 > ⚠️ **Multi-user boundary (safety-boundary addendum)**: `127.0.0.1` is **shared across all Windows accounts**.  
 > If a second Windows account is added to this machine later, the UI channel is effectively opening "force kill with no token" to other users --  
@@ -244,25 +299,32 @@ Any local script can forge same-origin headers and call `/api/v1/ui/*`—therefo
 > `taskkill /T` runs, a target may create a new child process that the snapshot cannot see; that child may be killed along with the target.  
 > **A pre-kill snapshot is not absolutely real-time**, and the tool does not claim an absolute guarantee.
 
-#### 5.1 Display cache and manual refresh
+</details>
+
+### 5.1 Display cache and manual refresh
 
 - `GET /api/v1/ports` uses a **5-second cache** for display. A cache hit returns `data_cached:true` and `data_time`  
   (the data timestamp); the page's status bar shows "Cached data; may be up to 5 seconds old."
 - **The cache is for display only and never enters the close path**: every `kill` performs a fresh full scan. If cached data somehow enters the close path,  
   the server refuses to proceed (500); it never kills a process based on stale identity data.
 - **The manual refresh button uses `?refresh=1`** to bypass the cache and force a fresh scan—the refresh button must not be a dummy control.
+- Since 1.2, a forced refresh (`?refresh=1`) requested from a browser context
+  that the server classifies as cross-origin is downgraded to a normal cached
+  query (the response sets `refresh_ignored: true`). Local scripts, CLIs and
+  same-origin pages are unaffected (the single-user trust model in §5 is
+  unchanged).
 - `GET /api/v1/agent/ports?port=X`, which returns a fingerprint, **never uses the cache** (a cached fingerprint refers to a past owner  
   and would give AI a credential guaranteed to result in 409).
 
-### 6. AI access (AI: read this)
+## 6. AI access (AI: read this)
 
-#### 6.1 Address discovery
+### 6.1 Address discovery
 
-1. First try the default `http://127.0.0.1:3999/api/v1/health`;
-2. If that does not respond, read the `base_url` in `runtime.json` in this directory (it contains no token);
-3. Do not scan ports to find the console.
+1. Read the `base_url` in `runtime.json` in this directory first (it contains no token; it is written only after listen succeeds, so the port in it always accepts connections);
+2. If it is missing or stale (pid gone), run `python portctl.py health` — it has **bounded discovery** over 3999–4098, verifying `ok:true + api_version:"v1" + port` plus an `instance_id` that proves it is *this* package's console; multiple instances are reported, not guessed;
+3. **Never write your own loop over the range** (AI or human): use `portctl.py` or the HTTP rules above. "3999 is closed" does not mean "the service is down" — the console shifts when the port is taken; the real port is in `runtime.json`.
 
-#### 6.2 Read-only queries (L0, no token)
+### 6.2 Read-only queries (L0, no token)
 
 ```
 GET /api/v1/agent/ports            # compact list (saves tokens: command lines are omitted)
@@ -270,7 +332,7 @@ GET /api/v1/agent/ports?port=3977  # inspect one port; snapshot_id is included i
 GET /api/v1/ports                  # full entries (command lines are redacted by default; same-origin UI can see the full values)
 ```
 
-#### 6.3 Closing: the fixed rule "check first, then kill"
+### 6.3 Closing: the fixed rule "check first, then kill"
 
 ```
 GET  /api/v1/agent/ports?port=X     → check name/level/kill_allowed, confirm this is the target to clear
@@ -287,12 +349,12 @@ Header: X-Port-Console-Token: <token>   (optional X-Port-Console-Client: zcode/d
 - Rate limit reached → `429 rate_limited` (maximum 6 real force kills per channel per minute; `already_free` does not count).
 - The operation is complete only when `ok=true` and `remaining=[]`.
 
-#### 6.4 Caller tag
+### 6.4 Caller tag
 
 Agent requests should include `X-Port-Console-Client` (any short identifier, such as `zcode`, `cursor`, or `my-agent`); the audit log uses it to distinguish callers.  
 If omitted, it is recorded as `unknown`.
 
-#### 6.5 Rules for reading the port reference tables
+### 6.5 Rules for reading the port reference tables
 
 `ports.json` / `ports.md` are **knowledge-layer** data files (they only answer "What is this port usually used for?"):
 
@@ -306,10 +368,10 @@ If omitted, it is recorded as `unknown`.
 **Recognition-rate definition**: denominator = the number of unique listening targets (deduplicated by `(pid,proc,started)`).  
 "Correctly recognized" means `source=auto`, a non-empty `name`, and `name != "系统"` (the literal "系统" / "System" label is a protection fallback,  
 not an identification of ownership). **Target: at least 70% correctly recognized** (the original 80% target is unrealistic without a process-fingerprint database).  
-With 21 rules, the measured rate is about 54%; **the target has not been met**. The gap will be addressed by adding rules for common software.  
+With 21 rules, the measured rate at 1.0.1 was about 54% (the shipped example rules have stayed at 21 since 1.1.1 and the rate has **not been re-measured**); **the target is not claimed as met**. The gap will be addressed by adding rules for common software.  
 The phase-two "pure ctypes rewrite" is unrelated to this metric; use "2.0 / ctypes refactor" in documentation to avoid name collisions.
 
-### 7. Audit log (written to disk only, no history UI)
+## 7. Audit log (written to disk only, no history UI)
 
 `kill_audit.jsonl`: each real close action writes one line before and one after (time / channel / port / target ownership / result).
 
@@ -317,15 +379,15 @@ The phase-two "pure ctypes rewrite" is unrelated to this metric; use "2.0 / ctyp
 - It rotates automatically after exceeding 1 MiB and keeps up to 3 backups;
 - An idempotent `already_free` success is not a real close and is not logged.
 
-### 8. Configuration maintenance (restart the console after changes)
+## 8. Configuration maintenance (restart the console after changes)
 
 | File                        | Purpose                                                                   |
 | ------------------------- | -------------------------------------------------------------------- |
 | `rules.json`              | Automatic recognition rules (21 shipped). **Matching scope and order matter; see below.** |
 | `protection.json`         | Protected system ports and processes. To protect a DSH host port, add its port number to `ports`. |
 | `port_map.json`           | Manual names (UI edits are written here automatically; it can also be edited by hand). These are display labels only and do not participate in close-identity checks. |
-| `ports.json` / `ports.md` | Port knowledge base ("What is this port usually used for?", 111 entries). **No code-path impact**: for people and AI to read only; it does not affect close decisions (see Section 6.5). |
-| `unknown.json`            | Unknown-item ledger (recorded automatically, up to 500 entries; command-line values are redacted). |
+| `ports.json` / `ports.md` | Port knowledge base ("What is this port usually used for?", 108 entries). **No code-path impact**: for people and AI to read only; it does not affect close decisions (see Section 6.5). |
+| `unknown.json`            | Unknown-item ledger (recorded automatically, up to 500 entries; command-line values are redacted; since 1.2, protected, system-level and unreadable-info targets are not recorded). |
 
 **Three key points about `rules.json`:**
 
@@ -340,7 +402,7 @@ The phase-two "pure ctypes rewrite" is unrelated to this metric; use "2.0 / ctyp
 - If configuration is damaged: `rules.json` / `protection.json` prevent startup; `port_map.json` / `unknown.json`  
   are backed up and recreated, with a message shown at the top of the page.
 
-### 9. FAQ
+## 9. FAQ
 
 - **Why is the port still occupied after I killed a process?** Check `remaining` in the response. The parent may have exited while a child remains,  
   or a new process may have taken over the port. Reconfirm against the current owners in `remaining`; the tool will not use an old snapshot to pursue a new process.
@@ -391,15 +453,15 @@ tests/                     # unit tests + end-to-end acceptance tests
 
 <div align="center">
 
-<img src="assets/team/avatar-turbo.png" width="120" alt="Dou Turbo"> <img src="assets/team/avatar-pro.png" width="120" alt="Pro"> <img src="assets/team/avatar-xiaoniu.png" width="120" alt="Xiao Niu"> <img src="assets/team/avatar-xiaoa.png" width="120" alt="Xiao A">
+<img src="assets/team/avatar-turbo.png" width="96" alt="Dou Turbo"> <img src="assets/team/avatar-pro.png" width="96" alt="Pro"> <img src="assets/team/avatar-xiaoniu.png" width="96" alt="Xiao Niu"> <img src="assets/team/avatar-xiaoa.png" width="96" alt="Xiao A">
 
 <sub><b>Dou Turbo</b>　<b>Pro</b>　<b>Xiao Niu</b>　<b>Xiao A</b></sub>
 
-<img src="assets/team/avatar-daa.png" width="120" alt="Da A"> <img src="assets/team/avatar-daniu.png" width="120" alt="Da Niu"> <img src="assets/team/avatar-xiaoshen.png" width="120" alt="Xiao Shen"> <img src="assets/team/avatar-ashu.png" width="120" alt="A Shu">
+<img src="assets/team/avatar-daa.png" width="96" alt="Da A"> <img src="assets/team/avatar-daniu.png" width="96" alt="Da Niu"> <img src="assets/team/avatar-xiaoshen.png" width="96" alt="Xiao Shen"> <img src="assets/team/avatar-ashu.png" width="96" alt="A Shu">
 
 <sub><b>Da A</b>　<b>Da Niu</b>　<b>Xiao Shen</b>　<b>A Shu</b></sub>
 
-<img src="assets/team/avatar-neko.png" width="120" alt="Neko"> <img src="assets/team/avatar-azi.png" width="120" alt="A Zi"> <img src="assets/team/avatar-laoqin.png" width="120" alt="Lao Qin"> <img src="assets/team/avatar-laodou.png" width="120" alt="Lao Dou">
+<img src="assets/team/avatar-neko.png" width="96" alt="Neko"> <img src="assets/team/avatar-azi.png" width="96" alt="A Zi"> <img src="assets/team/avatar-laoqin.png" width="96" alt="Lao Qin"> <img src="assets/team/avatar-laodou.png" width="96" alt="Lao Dou">
 
 <sub><b>Neko</b>　<b>A Zi</b>　<b>Lao Qin</b>　<b>Lao Dou</b></sub>
 

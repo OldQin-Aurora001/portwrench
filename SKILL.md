@@ -1,6 +1,6 @@
 ---
 name: portwrench
-version: 1.1.1
+version: "1.3.1"
 author: PortWrench Team
 license: MIT
 metadata:
@@ -24,10 +24,11 @@ description: "Use when 查本机哪个端口被谁占了、关掉关了黑框还
 ## 铁律（先读这个再动手）
 
 1. **先查后杀，固定口径**——不许跳过查询直接猜端口/猜 PID；
-2. **禁扫端口找服务**——先试 `http://127.0.0.1:3999/api/v1/health`，
-   **不通不代表服务没起**：本体端口会顺延（3999–4098，被占就 +1），
-   此时读本包 `runtime.json` 的 `base_url` 拿真实端口，**别自己扫区间**；
-   `runtime.json` 也没有才判「未运行」。
+2. **禁扫端口找服务**——用 `python <包>\portctl.py health` 做地址发现（内置
+   **有界发现**：3999–4098 逐个验 `ok:true ＋ api_version:"v1" ＋ port`，
+   并用实例号确认是本包实例）；手动排障先读本包 `runtime.json` 的 `base_url`
+   （写在监听成功之后）；**别自己写循环扫区间**，也别把「3999 不通」当成
+   「服务没起」——被占会顺延（3999–4098）。
 3. **403 不要再试**——受保护目标（保护端口/Session 0/System32 宿主/信息读不到
    fail closed/用户在面板上手动保护的目标），工具拒杀是设计不是故障；
 4. **只有 `ok:true 且 remaining=[]` 才算关干净**；
@@ -75,8 +76,8 @@ Header: X-Port-Console-Token: <token>（建议再加 X-Port-Console-Client: <你
 ## 自验
 
 ```
-py -3 -m unittest discover -s tests -v        # 103 个单测
-py -3 tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt   # 21 步
+py -3 -B -m unittest discover -s tests -v        # 159 个单测
+py -3 -B tests\acceptance_api.py --base-url <BASE> --token-file api_token.txt   # 21 步（<BASE> 取 portctl.py health 输出）
 ```
 
 ---
@@ -99,8 +100,10 @@ py -3 tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_
 ## Hard rules (read before acting)
 
 1. **Query before kill — always.** Never guess ports or PIDs;
-2. **Never scan ports to find the service.** Try `http://127.0.0.1:3999/api/v1/health`
-   first; if down, read `base_url` from `runtime.json` in this package;
+2. **Never scan ports to find the service yourself.** Use `portctl.py health` — it has
+   bounded discovery over 3999–4098 (verifying `ok:true + api_version:"v1" + port`)
+   plus an instance id proving it is *this* package's console; otherwise read
+   `base_url` from `runtime.json` in this package (written only after listen succeeds);
 3. **On 403, stop.** The target is protected (protected ports / Session 0 /
    System32 hosts / unreadable info → fail-closed / user-protected via the panel).
    Refusal is by design;
@@ -119,7 +122,9 @@ python <package>\portctl.py health          # liveness check
 ```
 
 - Service not running → ask the user to start `启动端口控制台.bat`
-  (Windows, Python 3.10+; default `http://127.0.0.1:3999/`).
+  (Windows, Python 3.10+; default `http://127.0.0.1:3999/` — if taken, the
+  console shifts to 3999–4098; take the real URL from `portctl.py health`
+  or `runtime.json`).
 - Without a shell, use HTTP:
 
 ```
@@ -152,6 +157,6 @@ Header: X-Port-Console-Token: <token>   (add X-Port-Console-Client: <your-name> 
 ## Self-test
 
 ```
-py -3 -m unittest discover -s tests -v        # 103 unit tests
-py -3 tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt   # 21 steps
+py -3 -B -m unittest discover -s tests -v        # 159 unit tests
+py -3 -B tests\acceptance_api.py --base-url <BASE> --token-file api_token.txt   # 21 steps (<BASE> from portctl.py health)
 ```

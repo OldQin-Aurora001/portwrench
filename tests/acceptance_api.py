@@ -590,6 +590,11 @@ def wait_runtime_ready(tmp, proc, timeout=40):
     return None
 
 
+def mask_token(tok: str) -> str:
+    """1.3.1：token 遮蔽只留末 2 位，其余全遮。"""
+    return "***" + tok[-2:] if tok else "***"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base-url", default="http://127.0.0.1:3999")
@@ -597,7 +602,7 @@ def main():
     args = ap.parse_args()
     tok = Path(args.token_file).read_text(encoding="utf-8-sig").strip()
     TOKEN["v"] = tok
-    note("[acceptance] token 遮蔽加载: " + tok[:4] + "***" + tok[-4:])
+    note("[acceptance] token 遮蔽加载: " + mask_token(tok))
 
     api = Api(args.base_url)
     trees = []
@@ -672,7 +677,7 @@ def main():
             except Exception:
                 pass
         note("[acceptance] 退出码 " + str(exit_code)
-             + "（token " + tok[:4] + "***" + tok[-4:] + " 全程遮蔽）")
+             + "（token " + mask_token(tok) + " 全程遮蔽）")
     sys.exit(exit_code)
 
 

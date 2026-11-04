@@ -5,8 +5,11 @@ HTTP 层测试起真 ThreadingHTTPServer（127.0.0.1 随机端口），请求用
 （Host 头固定 127.0.0.1:3999，与服务端 actual_port=3999 对齐）。
 注意：所有 mock 快照的 sessions 决定 SessionId（None → fail closed 不可杀）。"""
 
+import contextlib
+import io
 import json
 import os
+import re
 import shutil
 import socket
 import sys
@@ -21,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import port_console as pc  # noqa: E402
+import portctl as pctl  # noqa: E402  （1.3 R2：CLI 地址发现要能被单测锁住）
 
 FAKE_PORT = 3999  # 服务端 actual_port 固定值，请求 Host 头与之对齐
 
@@ -800,13 +804,20 @@ class TestInstance(unittest.TestCase):
             fd2 = pc.acquire_instance_lock(tmp)
             self.assertIsNone(fd2)                       # 多实例不能同时持锁
             os.close(fd1)
-            # 端口顺延：3999 被占（模拟占用）→ find_available_port 返回下一个可用
+            # 端口顺延：起点被真监听占用 → bind_console_server 顺延到下一个可用，
+            # 且返回的 server 已经 listen（不是"探一下再关"的空档）。
             blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             blocker.bind(("127.0.0.1", 0))
+            blocker.listen(1)
             occupied = blocker.getsockname()[1]
             with mock.patch.object(pc, "DEFAULT_PORT", occupied):
-                got = pc.find_available_port()
-                self.assertEqual(got, occupied + 1)
+                server, got = pc.bind_console_server()
+                try:
+                    self.assertEqual(got, occupied + 1)
+                    with socket.create_connection(("127.0.0.1", got), timeout=2):
+                        pass
+                finally:
+                    server.server_close()
             blocker.close()
             # 正常退出只清理自己写的 runtime
             pc.write_runtime_info(tmp, 4001)
@@ -824,7 +835,7 @@ class TestInstance(unittest.TestCase):
             (tmp / "runtime.json").write_text(json.dumps(
                 {"base_url": f"http://127.0.0.1:{FAKE_PORT}", "pid": 999999}), encoding="utf-8")
             with mock.patch.object(pc, "pid_alive", return_value=False), \
-                 mock.patch.object(pc, "_health_probe", return_value=False):
+                 mock.patch.object(pc, "_health_identity", return_value=None):
                 pc.clear_stale_runtime(tmp)
             self.assertFalse((tmp / "runtime.json").exists())
             self.assertTrue(any(p.name.startswith("pcon-") for p in tmp.iterdir()))
@@ -832,7 +843,7 @@ class TestInstance(unittest.TestCase):
             fd = pc.acquire_instance_lock(tmp)
             self.assertIsNotNone(fd)
             with mock.patch.object(pc, "pid_alive", return_value=False), \
-                 mock.patch.object(pc, "_health_probe", return_value=False), \
+                 mock.patch.object(pc, "_health_identity", return_value=None), \
                  mock.patch.object(pc.time, "sleep"), \
                  self.assertRaises(SystemExit) as cm:
                 pc.handle_existing_instance(tmp)
@@ -2517,4 +2528,745 @@ class Test68OnedriveNoRegression(ServerCase):
                   "exe": r"C:\Logi\lghub_agent.exe"}, "罗技lghub")]:
             self.assertEqual(pc.classify_entry(st, dict(base, **over))["name"], name,
                              f"回归: {over}")
+
+
+# ============================================================================
+# 1.3 八项新增（项①82 stderr 解码 / 项②83 Server 头 / 项③84 稳定话术）
+# ============================================================================
+
+
+class Test82StderrDecoding(unittest.TestCase):
+    """1.3 项①：三级回退 + CLIXML 先剥后截。"""
+
+    def test_82a_utf8_passthrough(self):
+        self.assertEqual(pc._decode_console_bytes("中文错误".encode("utf-8")), "中文错误")
+
+    def test_82b_gbk_fallback(self):
+        import ctypes
+        if ctypes.windll.kernel32.GetACP() != 936:
+            self.skipTest("非 936 码页，GBK 断言不适用")
+        self.assertEqual(pc._decode_console_bytes(b"\xce\xde\xd0\xa7\xc0\xe0"), "无效类")
+
+    def test_82c_bad_bytes_replace_no_raise(self):
+        out = pc._extract_ps_stderr(b"\xff\xfe\x00", limit=300)
+        self.assertTrue(out)  # replace 兜底，不抛异常
+
+    def test_82d_clixml_strips_progress_and_escapes(self):
+        import ctypes
+        if ctypes.windll.kernel32.GetACP() != 936:
+            self.skipTest("非 936 码页，本用例内嵌 GBK 字节断言不适用")
+        ns = b'xmlns="http://schemas.microsoft.com/powershell/2004/04"'
+        raw = (
+            b'#< CLIXML\r\n<Objs Version="1.1.0.1" ' + ns + b'>'
+            b'<Obj S="progress" RefId="1"><S S="progress">Preparing modules for first use...</S></Obj>'
+            b'<S S="Error">\xce\xde\xd0\xa7\xc0\xe0_x000D__x000A_At line:3 char:13</S>'
+            b'</Objs>'
+        )
+        out = pc._extract_ps_stderr(raw, limit=300)
+        self.assertIn("无效类", out)
+        self.assertNotIn("CLIXML", out)
+        self.assertNotIn("<", out)
+        self.assertNotIn("_x000", out)
+        self.assertNotIn("Preparing", out)
+
+    def test_82e_non_clixml_gbk_taskkill(self):
+        import ctypes
+        if ctypes.windll.kernel32.GetACP() != 936:
+            self.skipTest("非 936 码页，GBK 断言不适用")
+        out = pc._extract_ps_stderr('错误: 没有找到进程 "999999"。'.encode("gbk"), limit=200)
+        self.assertIn("没有找到进程", out)
+
+    def test_82f_real_powershell_failure_end_to_end(self):
+        """端到端（唯一有效判据）：真失败 PS 调用，ScanError 必须是人话，无 CLIXML 壳。"""
+        import shutil
+        import ctypes
+        if not shutil.which("powershell.exe"):
+            self.skipTest("无 powershell.exe")
+        with self.assertRaises(pc.ScanError) as cm:
+            pc.run_powershell("Get-CimInstance -ClassName Win32_Bogus -ErrorAction Stop")
+        msg = str(cm.exception)
+        self.assertNotIn("CLIXML", msg)
+        self.assertNotIn("<Objs", msg)
+        self.assertNotIn("_x000", msg)
+        self.assertIn("Bogus", msg)  # ASCII 类名任何 locale 都应在
+        if ctypes.windll.kernel32.GetACP() == 936:
+            self.assertIn("无效类", msg)  # 中文机必须是可读中文
+
+
+class Test83ServerVersionHeader(ServerCase):
+    """1.3 项②：Server 头随发布版本。"""
+
+    def test_83_health_server_header_is_1_3(self):
+        st, head, _ = http_req_raw("GET", "/api/v1/health")
+        self.assertEqual(st, 200)
+        self.assertIn("server: portconsole/1.3.1", head.lower())
+        self.assertNotIn("python/", head.lower())  # 加分项：解释器版本不外泄
+
+    def test_83b_constant_locked(self):
+        self.assertEqual(pc.SERVER_VERSION, "PortConsole/1.3.1")
+
+    def test_83c_header_exact_no_trailing_space(self):
+        """1.3 返工：锁住「响应头恰好等于常量」。
+        默认 version_string 会拼 server_version + ' ' + sys_version，置空 sys_version
+        仍留尾空格；上一版只靠 assertIn，删掉覆写也照样绿 —— 本条补这个洞。"""
+        st, head, _ = http_req_raw("GET", "/api/v1/health")
+        self.assertEqual(st, 200)
+        for line in head.split("\n"):
+            if line.lower().startswith("server:"):
+                self.assertEqual(line.split(":", 1)[1].strip(), "PortConsole/1.3.1")
+                self.assertEqual(line.rstrip("\r"), "Server: PortConsole/1.3.1")
+                break
+        else:
+            self.fail("响应头里没有 Server 行")
+
+
+def _raw_post_json(payload: bytes, headers=None):
+    hdrs = {"Host": f"127.0.0.1:{FAKE_PORT}", "Content-Type": "application/json"}
+    hdrs.update(headers or {})
+    req = "POST /api/v1/agent/kill HTTP/1.1\r\n"
+    for k, v in hdrs.items():
+        req += f"{k}: {v}\r\n"
+    req += f"Content-Length: {len(payload)}\r\nConnection: close\r\n\r\n"
+    with socket.create_connection(("127.0.0.1", _server_port()), timeout=8) as s:
+        s.sendall(req.encode("utf-8") + payload)
+        buf = b""
+        while True:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    head, _, body = buf.partition(b"\r\n\r\n")
+    status = int(head.split(b"\r\n", 1)[0].split(b" ")[1])
+    return status, json.loads(body.decode("utf-8"))
+
+
+class Test84StableErrorMessages(ServerCase):
+    """1.3 项③：15 处异常原文不出响应体，详情进 stderr；code/状态码不变。"""
+
+    SCAN = make_scan([conn("0.0.0.0", 3084, 1234)], [proc(1234)], {"1234": 1})
+    UI_HDR = {"Origin": f"http://127.0.0.1:{FAKE_PORT}", "Sec-Fetch-Site": "same-origin"}
+    DETAIL = "boom 内部细节 无效类"
+
+    def _assert_stable(self, st, obj, code, message, err, prefix):
+        self.assertEqual(st, 500 if code != "invalid_request" else 400)
+        self.assertEqual(obj["reason"], code)
+        self.assertEqual(obj["message"], message)
+        self.assertNotIn(self.DETAIL, json.dumps(obj, ensure_ascii=False))
+        self.assertNotIn("CLIXML", json.dumps(obj, ensure_ascii=False))
+        self.assertIn(prefix, err.getvalue())
+
+    def test_84_01_kill_first_scan(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "scan_snapshot", side_effect=pc.ScanError(self.DETAIL)):
+            st, obj = http_req("POST", "/api/v1/agent/kill", kill_body(), AGENT_HDR)
+        self._assert_stable(st, obj, "scan_failed", "扫描失败，无法完成操作，请稍后重试",
+                            err, "kill-scan:")
+
+    def test_84_02_audit_pre_ui(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "write_audit_event",
+                                  side_effect=OSError("C:\\secret\\" + self.DETAIL)):
+            st, obj = http_req("POST", "/api/v1/ui/kill",
+                               dict(kill_body(), force=False), self.UI_HDR)
+        self.assertEqual((st, obj["reason"]), (500, "audit_write_failed"))
+        self.assertEqual(obj["message"], "操作未能执行，审计记录写入失败")
+        self.assertNotIn("secret", json.dumps(obj))
+        self.assertIn("audit-pre-ui:", err.getvalue())
+
+    def test_84_03_wm_close_rescan(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "find_main_window_for_pid", return_value=123), \
+                mock.patch.object(pc, "post_wm_close", return_value=True), \
+                mock.patch.object(pc, "wait_tree_exit", return_value=[]), \
+                mock.patch.object(pc, "scan_snapshot",
+                                  side_effect=[self.h._scan, pc.ScanError(self.DETAIL)]):
+            st, obj = http_req("POST", "/api/v1/ui/kill",
+                               dict(kill_body(), force=False), self.UI_HDR)
+        self._assert_stable(st, obj, "scan_failed",
+                            "关窗后复核失败，请重新查询端口状态确认", err, "wm_close-rescan:")
+
+    def test_84_04_audit_pre_agent(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "write_audit_event",
+                                  side_effect=OSError("C:\\secret\\" + self.DETAIL)):
+            st, obj = http_req("POST", "/api/v1/agent/kill", kill_body(), AGENT_HDR)
+        self.assertEqual((st, obj["reason"]), (500, "audit_write_failed"))
+        self.assertEqual(obj["message"], "操作未能执行，审计记录写入失败")
+        self.assertNotIn("secret", json.dumps(obj))
+        self.assertIn("audit-pre-agent:", err.getvalue())
+
+    def test_84_05_prekill_rescan(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "pid_matches_start", return_value=False), \
+                mock.patch.object(pc, "run_taskkill") as tk, \
+                mock.patch.object(pc, "scan_snapshot",
+                                  side_effect=[self.h._scan, pc.ScanError(self.DETAIL)]):
+            st, obj = http_req("POST", "/api/v1/agent/kill", kill_body(), AGENT_HDR)
+        self._assert_stable(st, obj, "scan_failed", "杀前复核失败，操作已中止",
+                            err, "prekill-rescan:")
+        tk.assert_not_called()
+
+    def test_84_06_postkill_verify(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "run_taskkill", return_value=(True, "")), \
+                mock.patch.object(pc, "pid_matches_start", return_value=True), \
+                mock.patch.object(pc, "wait_tree_exit", return_value=[]), \
+                mock.patch.object(pc, "scan_snapshot",
+                                  side_effect=[self.h._scan, pc.ScanError(self.DETAIL)]):
+            st, obj = http_req("POST", "/api/v1/agent/kill", kill_body(), AGENT_HDR)
+        self._assert_stable(st, obj, "scan_failed",
+                            "强杀结果验证失败，请重新查询确认", err, "postkill-rescan:")
+
+    def test_84_07_command_failed(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "run_taskkill",
+                                  return_value=(False, "taskkill stderr " + self.DETAIL)), \
+                mock.patch.object(pc, "pid_matches_start", return_value=True), \
+                mock.patch.object(pc, "wait_tree_exit", return_value=[1234]):
+            st, obj = http_req("POST", "/api/v1/agent/kill", kill_body(), AGENT_HDR)
+        self.assertEqual((st, obj["reason"]), (500, "command_failed"))
+        self.assertEqual(obj["message"], "强杀未生效：可能权限不足（需以管理员身份运行），或目标正在被系统占用")
+        self.assertNotIn(self.DETAIL, json.dumps(obj, ensure_ascii=False))
+        self.assertIn("taskkill:", err.getvalue())
+
+    def test_84_08_rename_scan(self):
+        err = io.StringIO()
+        body = {"port": 45001, "name": "x", "level": "other"}
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "scan_snapshot", side_effect=pc.ScanError(self.DETAIL)):
+            st, obj = http_req("POST", "/api/v1/ui/rename", body, self.UI_HDR)
+        self._assert_stable(st, obj, "scan_failed",
+                            "扫描失败，无法完成操作，请稍后重试", err, "rename-scan:")
+
+    def test_84_09_port_map_write(self):
+        err = io.StringIO()
+        body = {"port": 45001, "name": "x", "level": "other"}
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "atomic_write_json",
+                                  side_effect=OSError("C:\\secret\\port_map.json")):
+            st, obj = http_req("POST", "/api/v1/ui/rename", body, self.UI_HDR)
+        self.assertEqual((st, obj["reason"]), (500, "internal_error"))
+        self.assertEqual(obj["message"], "命名保存失败，请稍后重试")
+        self.assertNotIn("secret", json.dumps(obj))
+        self.assertIn("port_map-write:", err.getvalue())
+
+    def test_84_10_protect_write(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "scan_listen_ports", return_value={3084}), \
+                mock.patch.object(pc, "atomic_write_json",
+                                  side_effect=OSError("C:\\secret\\dynamic.json")):
+            st, obj = http_req("POST", "/api/v1/ui/protect", {"port": 3084}, self.UI_HDR)
+        self.assertEqual((st, obj["reason"]), (500, "internal_error"))
+        self.assertEqual(obj["message"], "保护设置保存失败，请稍后重试")
+        self.assertNotIn("secret", json.dumps(obj))
+        self.assertIn("protect-write:", err.getvalue())
+
+    def test_84_11_unprotect_write(self):
+        err = io.StringIO()
+        self.h.state.dynamic_protected.add(3084)
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "atomic_write_json",
+                                  side_effect=OSError("C:\\secret\\dynamic.json")):
+            st, obj = http_req("POST", "/api/v1/ui/unprotect", {"port": 3084}, self.UI_HDR)
+        self.assertEqual((st, obj["reason"]), (500, "internal_error"))
+        self.assertEqual(obj["message"], "解除保护保存失败，请稍后重试")
+        self.assertNotIn("secret", json.dumps(obj))
+        self.assertIn("unprotect-write:", err.getvalue())
+
+    def test_84_12_body_parse_end_to_end(self):
+        """端到端（不靠 mock）：坏 JSON 请求体，400 文案恒定，详情进 stderr。"""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            st, obj = _raw_post_json(b'{not valid json', AGENT_HDR)
+        self.assertEqual(st, 400)
+        self.assertEqual(obj["reason"], "invalid_request")
+        self.assertEqual(obj["message"], "请求体不是合法 JSON")
+        self.assertIn("body-parse:", err.getvalue())
+
+    def test_84_13_protection_scan(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "scan_listen_ports",
+                                  side_effect=pc.ScanError(self.DETAIL)):
+            st, obj = http_req("GET", "/api/v1/protection", None, AGENT_HDR)
+        self._assert_stable(st, obj, "scan_failed",
+                            "扫描失败，无法完成操作，请稍后重试", err, "protection-scan:")
+
+    def test_84_14_ports_scan(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "scan_snapshot", side_effect=pc.ScanError(self.DETAIL)):
+            st, obj = http_req("GET", "/api/v1/ports")
+        self._assert_stable(st, obj, "scan_failed",
+                            "扫描失败，无法完成操作，请稍后重试", err, "ports-scan:")
+
+    def test_84_15_agent_ports_scan(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), \
+                mock.patch.object(pc, "scan_snapshot", side_effect=pc.ScanError(self.DETAIL)):
+            st, obj = http_req("GET", "/api/v1/agent/ports", None, AGENT_HDR)
+        self._assert_stable(st, obj, "scan_failed",
+                            "扫描失败，无法完成操作，请稍后重试", err, "agent-ports-scan:")
+
+
+
+# ----------------------------------------------------------------------------
+# 单测 85-89（1.3 R2：端口顺延的跨时刻身份；见 落码方案_R2_ 第 3.4 节）
+# ----------------------------------------------------------------------------
+
+
+@contextmanager
+def fake_http_server(body=None, status="200 OK", extra_headers=(), drip=False, delay=0.4):
+    """起一个假 HTTP 服务器（线程），yield 端口。
+
+    用途：模拟"3999 上是别的软件""回 200 但不是本体 health""每 0.4s 吐 1 字节"。
+    """
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(4)
+    port = srv.getsockname()[1]
+    stop = threading.Event()
+
+    def _serve():
+        while not stop.is_set():
+            try:
+                srv.settimeout(0.2)
+                c, _ = srv.accept()
+            except OSError:
+                continue
+            with c:
+                try:
+                    c.recv(4096)
+                    if drip:
+                        c.sendall(("HTTP/1.1 %s\r\n" % status).encode("ascii"))
+                        for b in b"{}\r\n":
+                            if stop.is_set():
+                                break
+                            c.sendall(bytes([b]))
+                            time.sleep(delay)
+                        continue
+                    payload = body if isinstance(body, bytes) else str(body or "").encode("utf-8")
+                    raw = ("HTTP/1.1 %s\r\n" % status).encode("ascii")
+                    for h in extra_headers:
+                        raw += (h + "\r\n").encode("ascii")
+                    raw += b"Content-Type: application/json\r\n"
+                    raw += ("Content-Length: %d\r\n\r\n" % len(payload)).encode("ascii")
+                    c.sendall(raw + payload)
+                except OSError:
+                    pass
+
+    threading.Thread(target=_serve, daemon=True).start()
+    try:
+        yield port
+    finally:
+        stop.set()
+        try:
+            srv.close()
+        except OSError:
+            pass
+
+
+@contextmanager
+def console_server():
+    """起真本体（Harness），把 health 自报的 port 对齐到真实监听口。"""
+    h = Harness(console_port=0)
+    h.server.actual_port = h.server.server_address[1]
+    try:
+        yield h
+    finally:
+        h.stop()
+
+
+def write_claim(base, port, pid, instance_id=""):
+    data = {"base_url": f"http://127.0.0.1:{int(port)}", "pid": int(pid),
+            "started_at": "2026-11-04T10:00:00+08:00", "api_version": "v1"}
+    if instance_id:
+        data["instance_id"] = instance_id
+    (Path(base) / "runtime.json").write_text(json.dumps(data), encoding="utf-8")
+
+
+def free_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+class Test85PortDiscoveryIdentity(unittest.TestCase):
+    """单测 85：CLI 地址发现——认人、拒歧义、超时不悬挂。"""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="pctl-85-"))
+        self._old_base = pctl.BASE_DIR
+        self._old_cand = pctl._candidates
+        pctl.BASE_DIR = self.tmp
+
+    def tearDown(self):
+        pctl.BASE_DIR = self._old_base
+        pctl._candidates = self._old_cand
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _cand(self, ports):
+        pctl._candidates = lambda claim: list(ports)
+
+    def test_85a_foreign_200_not_a_console(self):
+        with console_server() as h:
+            live = h.server.server_address[1]
+            with fake_http_server(body=b'{"hello":"world"}') as foreign:
+                self._cand([foreign, live])
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(pctl._discover(), (live, h.state.instance_id))
+                self.assertIn("未能确认身份", err.getvalue())
+
+    def test_85b_claim_wins_without_scanning(self):
+        with console_server() as h:
+            live = h.server.server_address[1]
+            write_claim(self.tmp, live, os.getpid(), h.state.instance_id)
+            self._cand([live, 65535])
+            calls = {"n": 0}
+            real = pctl._health
+
+            def counted(p):
+                calls["n"] += 1
+                return real(p)
+
+            pctl._health = counted
+            try:
+                self.assertEqual(pctl._discover(), (live, h.state.instance_id))
+            finally:
+                pctl._health = real
+            self.assertEqual(calls["n"], 1)     # 租约命中即返回，不再扫区间
+
+    def test_85c_stale_claim_allows_unique_console(self):
+        with console_server() as h:
+            live = h.server.server_address[1]
+            write_claim(self.tmp, free_port(), 999999, "dead-instance")
+            self._cand([free_port(), live])
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                self.assertEqual(pctl._discover(), (live, h.state.instance_id))
+            self.assertIn("未能确认身份", err.getvalue())
+
+    def test_85d_live_claim_with_other_instance_is_refused(self):
+        with console_server() as h:
+            live = h.server.server_address[1]
+            write_claim(self.tmp, live, os.getpid(), "not-my-instance")
+            self._cand([live])
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertIsNone(pctl._discover())
+            # 1.3 R2：拒绝原因记在 _REFUSED，由 _offline_exit 统一出口打印（不再与「不在线」打架）
+            self.assertIn("拒绝", pctl._REFUSED)
+            self.assertIn("另一个实例", pctl._REFUSED)
+
+    def test_85e_two_consoles_without_claim_is_refused(self):
+        with console_server() as a, console_server() as b:
+            p1 = a.server.server_address[1]
+            p2 = b.server.server_address[1]
+            self._cand([p1, p2])
+            with contextlib.redirect_stdout(io.StringIO()),                     contextlib.redirect_stderr(io.StringIO()):
+                self.assertIsNone(pctl._discover())
+            self.assertIn("无法判断", pctl._REFUSED)   # 拒绝原因由 _REFUSED 状态承载
+
+    def test_85f_runtime_json_non_object_is_none(self):
+        rt = self.tmp / "runtime.json"
+        for raw in ("[]", "null", "123", '"x"', '{"base_url":"http://127.0.0.1:abc"}',
+                    '{"base_url":"https://127.0.0.1:3999"}', "{bad json"):
+            rt.write_text(raw, encoding="utf-8")
+            self.assertIsNone(pctl._read_runtime_claim(), raw)
+
+    def test_85g_drip_feed_probe_is_bounded(self):
+        with fake_http_server(drip=True) as p:
+            t0 = time.monotonic()
+            self.assertIsNone(pctl._health(p))
+            self.assertLess(time.monotonic() - t0, 3.5)   # PROBE_BUDGET=1.8
+
+    def test_85h_health_port_field_must_match(self):
+        with fake_http_server(body=b'{"ok":true,"api_version":"v1","port":65000}') as p:
+            self.assertIsNone(pctl._health(p))
+
+    def test_85i_non_200_is_not_a_console(self):
+        with fake_http_server(body=b'{"ok":true,"api_version":"v1","port":0}',
+                              status="403 Forbidden") as p:
+            self.assertIsNone(pctl._health(p))
+
+    def test_85j_request_detects_instance_switch(self):
+        with fake_http_server(body=b'{"ok":true,"api_version":"v1","port":0}',
+                              extra_headers=["X-Port-Console-Instance: other"]) as p:
+            with self.assertRaises(pctl.ConsoleChanged):
+                pctl._request("GET", "/api/v1/health", p, expect_instance="mine")
+
+    def test_85k_offline_message_names_range(self):
+        pctl._REFUSED = ""   # 套件隔离
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(pctl._offline_exit(), 1)
+        txt = buf.getvalue()
+        self.assertIn("3999~4098", txt)
+        self.assertIn("runtime.json", txt)
+
+
+
+class Test86ServerLease(unittest.TestCase):
+    """单测 86：本体侧租约——身份、顺序、顺延。"""
+
+    def test_86a_runtime_record_carries_instance_id(self):
+        tmp = Path(tempfile.mkdtemp(prefix="pcon-le-"))
+        try:
+            pc.write_runtime_info(tmp, 4000, "abc123def4567890")
+            d = json.loads((tmp / "runtime.json").read_text(encoding="utf-8"))
+            self.assertEqual(d["instance_id"], "abc123def4567890")
+            self.assertNotIn("token", json.dumps(d))
+            pc.write_runtime_info(tmp, 4001)      # 旧调用形态仍可用（不写 instance_id）
+            d2 = json.loads((tmp / "runtime.json").read_text(encoding="utf-8"))
+            self.assertNotIn("instance_id", d2)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_86b_health_and_json_responses_stamp_instance(self):
+        h = Harness()
+        try:
+            iid = h.state.instance_id
+            st, head, obj = http_req_raw("GET", "/api/v1/health")
+            self.assertEqual(st, 200)
+            self.assertEqual(obj["instance_id"], iid)
+            self.assertIn(f"X-Port-Console-Instance: {iid}", head)
+            st2, head2, _ = http_req_raw("GET", "/api/v1/protection")
+            self.assertEqual(st2, 200)
+            self.assertIn(f"X-Port-Console-Instance: {iid}", head2)
+        finally:
+            h.stop()
+
+    def test_86c_bind_skips_listening_holder_and_returns_live_server(self):
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        occupied = blocker.getsockname()[1]
+        try:
+            with mock.patch.object(pc, "DEFAULT_PORT", occupied):
+                server, got = pc.bind_console_server()
+                try:
+                    self.assertGreater(got, occupied)     # 真监听占用必须顺延
+                    with socket.create_connection(("127.0.0.1", got), timeout=2):
+                        pass                             # 返回时已经在 listen
+                finally:
+                    server.server_close()
+        finally:
+            blocker.close()
+
+    def test_86d_all_ports_busy_raises(self):
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        occupied = blocker.getsockname()[1]
+        try:
+            with mock.patch.object(pc, "DEFAULT_PORT", occupied), \
+                 mock.patch.object(pc, "PORT_SCAN_RANGE", 1):
+                with self.assertRaises(RuntimeError):
+                    pc.bind_console_server()
+        finally:
+            blocker.close()
+
+    def test_86e_runtime_status_requires_same_instance(self):
+        tmp = Path(tempfile.mkdtemp(prefix="pcon-rs-"))
+        try:
+            pc.write_runtime_info(tmp, 4000, "mine-1")
+            with mock.patch.object(pc, "pid_alive", return_value=True), \
+                 mock.patch.object(pc, "_health_identity",
+                                   return_value={"ok": True, "port": 4000,
+                                                 "api_version": "v1",
+                                                 "instance_id": "other-2"}):
+                exists, pid_ok, health, base = pc.runtime_status(tmp)
+            self.assertTrue(exists)
+            self.assertTrue(pid_ok)
+            self.assertFalse(health)                  # 有人应答，但不是本实例
+            self.assertEqual(base, "http://127.0.0.1:4000")
+            with mock.patch.object(pc, "pid_alive", return_value=True), \
+                 mock.patch.object(pc, "_health_identity",
+                                   return_value={"ok": True, "port": 4000,
+                                                 "api_version": "v1",
+                                                 "instance_id": "mine-1"}):
+                self.assertTrue(pc.runtime_status(tmp)[2])
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    def test_86f_listen_before_write_runtime(self):
+        src = Path(pc.__file__).read_text(encoding="utf-8")
+        i_bind = src.index("server, port = bind_console_server()")
+        i_write = src.index("write_runtime_info(BASE_DIR, port, state.instance_id)")
+        self.assertLess(i_bind, i_write)
+
+    def test_86g_health_identity_rejects_non_console_200(self):
+        with fake_http_server(body=b'{"hello":"world"}') as p:
+            self.assertIsNone(pc._health_identity(p))
+
+
+
+class Test87DocsDiscovery(unittest.TestCase):
+    """单测 87：三份文档的地址发现口径（P-03）。"""
+
+    def test_87a_docs_use_bounded_identity_discovery(self):
+        readme = (_PKG / "README.md").read_text(encoding="utf-8")
+        usage = (_PKG / "使用说明.md").read_text(encoding="utf-8")
+        skill = (_PKG / "SKILL.md").read_text(encoding="utf-8")
+        for txt in (readme, usage, skill):
+            self.assertIn("有界发现", txt)
+        self.assertNotIn("禁止遍历端口扫描", readme)
+        self.assertNotIn("禁止遍历端口扫描", usage)
+        self.assertNotIn("先试 `http://127.0.0.1:3999/api/v1/health`", skill)
+
+    def test_87b_http_examples_do_not_hardcode_port(self):
+        usage = (_PKG / "使用说明.md").read_text(encoding="utf-8")
+        self.assertNotIn("127.0.0.1:3999/api/v1/agent", usage)
+        self.assertIn("<BASE>", usage)
+
+    def test_87c_skill_english_rule_synced(self):
+        skill = (_PKG / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Never scan ports to find the service yourself", skill)
+
+    def test_87d_doc_test_counts_match_reality(self):
+        """红门 C-2（1.3 R2 修改单）：md 里的「N 单测」总数必须等于测试函数（def 开头的 test_）实际个数。
+
+        历史值白名单（79/88/103/126/127）只在 CHANGELOG 的历史版本段放行
+        （第一个带版本号的「## 数字」标题行之后才算历史段）；其余任何 md
+        写错总数即红。英文口径（N unit tests）一并把守。
+        """
+        src = Path(__file__).read_text(encoding="utf-8")
+        actual = len(re.findall("def " + "test_" + r"\w+", src))
+        historical = {"79", "88", "103", "126", "127"}
+        pats = (
+            re.compile("(" + "\d+" + ")\s*[项个]?\s*单测"),
+            re.compile("单测\s*(\d+)\s*(?:个|项|→|＋)"),
+            re.compile("(" + "\d+" + ")\s*unit tests"),
+        )
+        mds = sorted(_PKG.glob("*.md")) + sorted((_PKG / "packages").rglob("*.md"))
+        for md in mds:
+            txt = md.read_text(encoding="utf-8")
+            m = re.search("(?m)^## " + r"\[\d", txt)
+            hist_from = m.start() if m else None
+            for pat in pats:
+                for mm in pat.finditer(txt):
+                    num = mm.group(1)
+                    if num == str(actual):
+                        continue
+                    if (num in historical and md.name == "CHANGELOG.md"
+                            and hist_from is not None and mm.start() >= hist_from):
+                        continue
+                    line_no = txt[:mm.start()].count("\n") + 1
+                    self.fail(f"{md.relative_to(_PKG).as_posix()}:{line_no} "
+                              f"写「{num} 单测」与实际 {actual} 不符")
+
+
+
+class Test88RangeSingleSource(unittest.TestCase):
+    """单测 88：3999/100 这个区间只有一个事实源，三处漂移即红。"""
+
+    def test_88_range_constants_match(self):
+        self.assertEqual(pc.DEFAULT_PORT, 3999)
+        self.assertEqual(pctl.DEFAULT_PORT, 3999)
+        self.assertEqual(pc.PORT_SCAN_RANGE, pctl.SCAN_RANGE)
+        self.assertEqual(pc.DEFAULT_PORT + pc.PORT_SCAN_RANGE - 1, 4098)
+        shell = (_PKG / "packages" / "dsh-portwrench" / "lib" / "index.mjs").read_text(encoding="utf-8")
+        self.assertIn("var PW_BASE = 3999;", shell)
+        self.assertIn("var PW_MAX = 4098;", shell)
+
+
+
+class Test89OfflineOutlet(unittest.TestCase):
+    """单测 89：五个命令共用一个"不在线"出口（P-13）。"""
+
+    def test_89a_single_offline_message_source(self):
+        src = Path(pctl.__file__).read_text(encoding="utf-8")
+        self.assertEqual(src.count("控制台不在线"), 1)
+
+    def test_89b_message_names_range_and_claim(self):
+        pctl._REFUSED = ""   # 套件隔离：清掉前面用例残留的拒绝文案
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(pctl._offline_exit(), 1)
+        txt = buf.getvalue()
+        self.assertIn("3999~4098", txt)
+        self.assertIn("runtime.json", txt)
+
+    def test_89c_helper_functions_defined_once(self):
+        """红门 C-1（1.3 R2 修改单）：辅助函数区只许一份，复制一份即红。
+
+        背景：公开轨曾因重复追加出现第二份辅助区（83 行逐字符相同）——Python
+        后定义覆盖前定义，测试看似全绿实则踩在第二份上。此门把它锁死。
+        """
+        src = Path(__file__).read_text(encoding="utf-8")
+        markers = ["def " + n + "(" for n in
+                   ("fake_http_server", "console_server", "write_claim", "free_port")]
+        markers.append("# " + "单测 85-89" + "（1.3 R2")
+        for mk in markers:
+            self.assertEqual(src.count(mk), 1, f"辅助区重复：{mk} 出现 {src.count(mk)} 次")
+
+
+# ----------------------------------------------------------------------------
+# 单测 90（1.3.1）：启动清理 pcon-*.tmp 孤儿 ＋ acceptance token 遮蔽
+# ----------------------------------------------------------------------------
+
+
+class Test90TmpAndMask(unittest.TestCase):
+    """单测 90：1.3.1 三条补丁的行为与静态锁（a–f）。"""
+
+    def test_90a_cleanup_orphan_tmp_removes_both(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "pcon-empty.tmp").write_bytes(b"")
+            (d / "pcon-data.tmp").write_text("payload", encoding="utf-8")
+            (d / "runtime.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(pc.cleanup_orphan_tmp(d), 2)
+            self.assertFalse((d / "pcon-empty.tmp").exists())
+            self.assertFalse((d / "pcon-data.tmp").exists())
+            self.assertTrue((d / "runtime.json").exists())
+
+    def test_90b_cleanup_orphan_tmp_keeps_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / "pcon-a.stale").write_text("evidence", encoding="utf-8")
+            (d / "pcon-keep.tmp.bak").write_text("backup", encoding="utf-8")
+            self.assertEqual(pc.cleanup_orphan_tmp(d), 0)
+            self.assertTrue((d / "pcon-a.stale").exists())
+            self.assertTrue((d / "pcon-keep.tmp.bak").exists())
+
+    def test_90c_cleanup_after_lock_before_token(self):
+        src = Path(pc.__file__).read_text(encoding="utf-8")
+        i_lock = src.index("acquire_instance_lock(BASE_DIR)")
+        i_clean = src.index("cleanup_orphan_tmp(BASE_DIR)")
+        i_token = src.index("ensure_token_file(BASE_DIR)")
+        self.assertLess(i_lock, i_clean)
+        self.assertLess(i_clean, i_token)
+
+    def test_90d_cleanup_before_bind(self):
+        src = Path(pc.__file__).read_text(encoding="utf-8")
+        self.assertLess(src.index("cleanup_orphan_tmp(BASE_DIR)"),
+                        src.index("server, port = bind_console_server()"))
+
+    def test_90e_mask_token_reveals_at_most_tail2(self):
+        import importlib.util
+        a = Path(__file__).resolve().parent / "acceptance_api.py"
+        spec = importlib.util.spec_from_file_location("_acc_mask90", a)
+        acc = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(acc)
+        masked = acc.mask_token("9ZygAbCdEf-Or0")
+        self.assertEqual(masked, "***r0")
+        self.assertLessEqual(len(masked.replace("*", "")), 2)
+        self.assertNotIn("9Zyg", masked)
+
+    def test_90f_acceptance_token_masking_wired(self):
+        a = Path(__file__).resolve().parent / "acceptance_api.py"
+        src = a.read_text(encoding="utf-8")
+        self.assertEqual(src.count("tok[:4]"), 0)
+        self.assertEqual(src.count("mask_token(tok)"), 2)
 

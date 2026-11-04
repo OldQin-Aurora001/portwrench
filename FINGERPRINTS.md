@@ -1,4 +1,4 @@
-# PortWrench 端口扳手 · 指纹清单（1.2 发布版）
+# PortWrench 端口扳手 · 指纹清单（1.3.1 开发版）
 
 > **发布版**：21 条通用示例规则 ＋ 6 个系统保护端口，不含任何本机定制。
 > **认版口径**：SHA256 前 16 位。运行时自建件（`runtime.json` / `port_map.json` /
@@ -8,30 +8,31 @@
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `port_console.py` | 116,061 | `70E412E086670063` |
-| `portctl.py` | 11,454 | `8F99144DEBCD8D49` |
+| `port_console.py` | 128,642 | `113633C375515AA6` |
+| `portctl.py` | 21,504 | `DE1DF28F904422E6` |
 | `index.html` | 30,108 | `339FB01C5615F6B7` |
 | `rules.json` | 2,000 | `D7868BC85C1CFBCF` |
 | `protection.json` | 176 | `088CF0D167A2CE96` |
 | `ports.json` | 47,595 | `0DC0F560D532EA31` |
 | `ports.md` | 9,010 | `024B3209DEFF1B49` |
 
-## 文档（12 件）
+## 文档（13 件）
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `README.md` | 21,888 | `D0F5153BD8D54329` |
-| `README.en.md` | 25,845 | `D86F7BD167C38855` |
-| `使用说明.md` | 9,321 | `DDE1B6C30F91C2C5` |
-| `DEVELOPMENT.md` | 10,064 | `4E442BE55052A766` |
-| `CHANGELOG.md` | 22,654 | `A2A0E5BBC9C07025` |
-| `SKILL.md` | 7,350 | `7F23000FAC2AFFB8` |
+| `README.md` | 25,162 | `72136404CE74EAA3` |
+| `README.en.md` | 30,083 | `93B7873EBB4C9CD6` |
+| `使用说明.md` | 9,939 | `335986F5095770F7` |
+| `DEVELOPMENT.md` | 10,070 | `2F953BDFD8C157F8` |
+| `CHANGELOG.md` | 26,361 | `58D9984FC14EC552` |
+| `SKILL.md` | 7,831 | `DAABF73387FCD736` |
 | `NOTICE.md` | 7,665 | `80F41D7229D95817` |
 | `NOTICE.en.md` | 8,339 | `EB94935F67C93E0F` |
 | `LICENSE` | 1,070 | `0783452F7ED48AE9` |
 | `icon.png` | 13,751 | `7AFF6A9D46155FDD` |
 | `启动端口控制台.bat` | 615 | `EEAD371F44B83BD1` |
-| `.gitignore` | 598 | `D9ABB479920E7C6F` |
+| `.gitattributes` | 502 | `CC3B1A191CD01369` |
+| `.gitignore` | 612 | `F7845261A7BD4A5E` |
 
 ## DSH 薄壳（5 件）
 
@@ -47,12 +48,12 @@
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
-| `tests/test_port_console.py` | 128,501 | `53A7C3E9CDCF4645` |
-| `tests/acceptance_api.py` | 29,978 | `EC3B57DE27416520` |
+| `tests/test_port_console.py` | 164,139 | `91C400940C95586A` |
+| `tests/acceptance_api.py` | 30,101 | `D213E813C24897AA` |
 | `tests/fixture_process_tree.py` | 2,555 | `0F3DE8E73EAA003A` |
 | `tests/fixture_windowed.ps1` | 1,529 | `95B4CD36235DB02A` |
 
-## assets（25 件）
+## assets（26 件）
 
 | 文件 | 字节 | SHA256 前 16 |
 |---|---|---|
@@ -79,7 +80,10 @@
 | `assets/team/avatar-xiaoniu.png` | 492,048 | `C6A8DF9A02E90879` |
 | `assets/team/avatar-xiaoshen.png` | 411,902 | `65A3FF74C5207D06` |
 | `assets/截图/ScreenShot_2026-11-01_191715_797.png` | 385,553 | `668DDD81B3DC280E` |
+| `assets/截图/ScreenShot_2026-11-01_191715_797_地址脱敏.png` | 362,580 | `379938D70F006033` |
 | `assets/截图/ScreenShot_2026-11-01_191845_385.png` | 35,435 | `6E02C141683DCDF7` |
 | `assets/截图/ScreenShot_2026-11-01_191935_345.png` | 58,568 | `D847D5BAE9A21226` |
 
-- 清单文件数：53；生成时间：2026-11-03 17:0x（**1.2 发布版**：21 条通用示例规则 ＋ 6 个系统保护端口；相对 1.1.1 新增 —— 跨源白名单谓词统一、agent/ports 收口与限流（403→429→503→扫描，匿名纯只读）、3999 移出静态保护表、System 兜底只看进程名、ticks 换源与文案分流、壳探活校验响应体（壳 0.1.2）；**103 单测全绿**；21 步 acceptance 全过；真机实测跨端口 Sec-Fetch-Site=same-site、壳能挡 200 假诱饵选对本体）
+- 清单文件数：55；生成时间：2026-11-04 22:00（**1.3.1 发布版**：在 1.2.0 公开版基础上完成八项整改——stderr 三级解码＋CLIXML 先剥后截、Server 头 1.3.1、15 处异常原文收口、版本字 1.3.1、CHANGELOG 口径；**159 单测全绿**；1.2 时代「21 步 acceptance 全过、真机实测跨端口 same-site、壳探活挡 200 假诱饵选对本体」为作者环境实测）
+- **换行口径（1.3 项⑧a）：本清单所有字节数/SHA256 锚定 LF 字节；发布流程禁止 CRLF 检出打 zip，仓库已加 `.gitattributes` 强制 LF。**
+- **验证归属（1.3 项⑧b）：1.2 发布版页脚所列「21 步 acceptance 全过；真机实测跨端口 Sec-Fetch-Site=same-site、壳能挡 200 假诱饵选对本体」均为作者环境实测；本包验证以 `tests/` 自跑结果为准，不把作者环境结论当成任何其他机器的背书。**

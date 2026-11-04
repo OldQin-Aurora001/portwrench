@@ -33,6 +33,7 @@ import threading
 import time
 import traceback
 import webbrowser
+import xml.etree.ElementTree as ET
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -49,6 +50,7 @@ from ctypes import wintypes
 BASE_DIR = Path(__file__).resolve().parent
 
 API_VERSION = "v1"
+SERVER_VERSION = "PortConsole/1.3.1"  # 1.3 项②：Server 响应头版本，发布时随版本改
 DEFAULT_PORT = 3999
 PORT_SCAN_RANGE = 100          # 3999 起顺延尝试数
 PS_TIMEOUT = 8.0               # §5.1 扫描超时
@@ -282,22 +284,48 @@ def _extract_loopback_port(base_url: str):
     return int(m.group(1)) if m else None
 
 
-def _health_probe(port) -> bool:
-    """裸 HTTP/1.0 GET /api/v1/health 到 127.0.0.1:port。host 字面量，端口先验类型。"""
+def _health_identity(port):
+    """裸 HTTP/1.0 GET /api/v1/health，返回 health body（None = 不是本软件的控制台）。
+
+    1.3 R2：旧实现只判状态行含 " 200 "——3999 上任何回 200 的服务都会被当成
+    "已有实例在跑"，handle_existing_instance 于是打印一行然后 exit 0；而真正的
+    控制台根本没起来。现在与 CLI 用同一套判据：200 ＋ JSON 对象 ＋ ok:true ＋
+    api_version ＋ port 一致，缺一项就不认。
+    """
     if not isinstance(port, int) or isinstance(port, bool) or not (1 <= port <= 65535):
-        return False
+        return None
+    deadline = time.monotonic() + 2.0
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=2) as s:
+            s.settimeout(2)
             s.sendall((
                 "GET /api/v1/health HTTP/1.0\r\n"
                 "Host: 127.0.0.1:" + str(port) + "\r\n"
                 "\r\n"
             ).encode("ascii"))
-            data = s.recv(512)
-        head = data.split(b"\r\n", 1)[0]
-        return b" 200 " in head
+            data = b""
+            while True:
+                if time.monotonic() > deadline or len(data) > 8192:
+                    return None      # 滴流/超大响应：不认（旧实现只 recv 一次就判）
+                chunk = s.recv(2048)
+                if not chunk:
+                    break
+                data += chunk
     except OSError:
-        return False
+        return None
+    head, _, body = data.partition(b"\r\n\r\n")
+    parts = head.split(b"\r\n", 1)[0].split()
+    if len(parts) < 2 or parts[1] != b"200":
+        return None
+    try:
+        obj = json.loads(body.decode("utf-8", "replace"))
+    except ValueError:
+        return None
+    if not isinstance(obj, dict) or obj.get("ok") is not True:
+        return None
+    if obj.get("api_version") != API_VERSION or obj.get("port") != port:
+        return None
+    return obj
 
 
 # ----------------------------------------------------------------------------
@@ -422,6 +450,74 @@ def post_wm_close(hwnd: int) -> bool:
 # PowerShell 调用与快照归一化（§5）
 # ----------------------------------------------------------------------------
 
+_PS_XML_NS = "{http://schemas.microsoft.com/powershell/2004/04}"
+_PS_XML_ESC = re.compile(r"_x([0-9A-Fa-f]{4})_")
+# 1.3 返工：CLIXML 解析输入上限。DTD 预检（见 _PS_DTD_RE）挡住 entity 膨胀，
+# 此处只防超大输入拖慢解析；取 4 MiB —— 实测 1.18 MB 的合法 CLIXML 必须能正常
+# 解析（原 64 KiB 会绕过解析、把真实错误全丢掉，项① 等于失效）。
+# 注：DTD 预检是「全串」扫描，不设窗口——曾用 xml_text[:4096]，实测在 DOCTYPE 前
+# 垫 XML 注释即可把 DOCTYPE 推出窗口、预检漏过、实体照展开（小深 11-04 实测）。
+_PS_ERR_XML_MAX = 4 * 1024 * 1024
+# 真 CLIXML 是 [#< CLIXML] + <Objs>，永不含 DOCTYPE/ENTITY。
+# 实测 6 组真 PS 样本 0 命中，零误判（小深复核 + 我复核）。
+_PS_DTD_RE = re.compile(r"<!(DOCTYPE|ENTITY)", re.I)
+
+
+def _decode_console_bytes(data: bytes) -> str:
+    """1.3 项①：控制台字节解码三级回退：utf-8 严格 → mbcs（本地 ANSI 码页）→ utf-8 replace。
+    实测同一台中文机 PS5.1 的 stderr 两种编码都出现过（Write-Error 走 GBK、真异常走
+    UTF-8）；taskkill.exe 恒走本地码页。mbcs 仅 Windows 有，LookupError 也要接住。"""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            return data.decode("mbcs")
+        except (LookupError, UnicodeDecodeError):
+            return data.decode("utf-8", errors="replace")
+
+
+def _squash_err_text(text: str, limit: int) -> str:
+    """把多行错误压成一行（服务端日志用）：换行→' | '，多余空白收拢，末尾截断。"""
+    text = re.sub(r"[\r\n]+", " | ", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"(\s*\|\s*)+", " | ", text)
+    return text.strip(" |")[:limit]
+
+
+def _strip_ps_xml_escapes(s: str) -> str:
+    """CLIXML 文本节点里的 _x000D_/_x000A_ 还原成真实字符。"""
+    return _PS_XML_ESC.sub(lambda m: chr(int(m.group(1), 16)), s)
+
+
+def _extract_ps_stderr(data: bytes, limit: int = 300) -> str:
+    """1.3 项①：PS5.1 stderr 提取。
+    必须【先剥 CLIXML、后截断】——实测真实错误在 offset 600+，旧口径先 [:300]
+    只截到前面的 progress 噪音。非 CLIXML（taskkill 形态）走码页解码后压扁截断。
+    1.3 返工：改为「DTD 预检（全串，不设窗口）+ 4 MiB 上限」——先剥 DTD/ENTITY
+    （真 CLIXML 永不含，防 entity 膨胀），再判大小。原「64 KiB 上限」两头都不对，
+    已撤销；预检窗口也撤销——设窗口等于留洞。"""
+    text = _decode_console_bytes(data)
+    if text.startswith("#< CLIXML"):
+        nl = text.find("\n")
+        xml_text = text[nl + 1:] if nl >= 0 else ""
+        # 1.3 返工：先查 DTD/ENTITY（真 CLIXML 永不含），再判大小。
+        # 顺序很重要——先查 DTD 才是真防 bomb；只判大小两头都不对（挡不住小 payload
+        # 膨胀，又会把大 CLIXML 挡在解析之外、丢真实错误）。
+        # ★ 必须全串扫，不能设窗口：XML 的 prolog 允许 DOCTYPE 前有任意多个注释，
+        #   位置没有上界；曾用 [:4096]，垫注释即可绕过（实测）。全串成本可忽略——
+        #   6.9M 字符 2.5ms vs 解析同份 158ms。
+        if _PS_DTD_RE.search(xml_text) is None and len(xml_text) <= _PS_ERR_XML_MAX:
+            try:
+                root = ET.fromstring(xml_text)
+                parts = ["".join(n.itertext())
+                         for n in root.iter(_PS_XML_NS + "S") if n.get("S") == "Error"]
+                if parts:
+                    return _squash_err_text(_strip_ps_xml_escapes("".join(parts)), limit)
+            except ET.ParseError:
+                pass
+        return _squash_err_text(text, limit)
+    return _squash_err_text(text, limit)
+
 
 def run_powershell(script: str) -> str:
     """§5.1：-EncodedCommand（UTF-16LE→Base64）、CREATE_NO_WINDOW、8s 超时、shell=False。"""
@@ -440,7 +536,7 @@ def run_powershell(script: str) -> str:
     except OSError as e:
         raise ScanError(f"powershell spawn failed: {e}") from e
     if proc.returncode != 0:
-        err = proc.stderr.decode("utf-8", errors="replace")[:300]
+        err = _extract_ps_stderr(proc.stderr, limit=300)
         raise ScanError(f"powershell exit {proc.returncode}: {err}")
     try:
         return proc.stdout.decode("utf-8")
@@ -1216,7 +1312,7 @@ def run_taskkill(pid: int) -> tuple:
     except (subprocess.TimeoutExpired, OSError) as e:
         return False, f"taskkill failed: {e}"
     if proc.returncode != 0:
-        err = proc.stderr.decode("utf-8", errors="replace")[:200]
+        err = _extract_ps_stderr(proc.stderr, limit=200)
         return False, f"taskkill exit {proc.returncode}: {err}"
     return True, ""
 
@@ -1272,6 +1368,10 @@ class AppState:
         self.warnings = list(configs["warnings"])
         self.console_port = console_port
         self.console_pid = os.getpid()
+        # 1.3 R2：实例身份。端口会顺延、会被顶，pid 会被复用；只有"本进程随机号"
+        # 能回答"应答的是不是写 runtime.json 的那个实例"。随进程生死，不落盘明文，
+        # 只进 runtime.json 与 health 回显，不含任何可推断信息。
+        self.instance_id = secrets.token_hex(8)
         self.token = token
         self.token_ok = token_ok
         self.started_at = time.monotonic()
@@ -1447,7 +1547,8 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
     try:
         scan = scan_or_error()
     except ScanError as e:
-        return 500, error_body("scan_failed", f"扫描失败: {e}")
+        print(f"[port-console] kill-scan: {e}", file=sys.stderr)
+        return 500, error_body("scan_failed", "扫描失败，无法完成操作，请稍后重试")
     # T-PORT-004 R3 第二层防御（V55）：展示缓存若因将来误接线流进 kill 路径，
     # 缓存里的身份是旧快照——宁可 500 拒绝执行，也不能拿旧身份去杀（工单 §三）。
     if scan.get("_cached"):
@@ -1563,7 +1664,8 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
                 "target": target_label, "client_id": client_id, "action": "started",
             })
         except OSError as e:
-            return 500, error_body("audit_write_failed", f"审计前置事件写盘失败: {e}")
+            print(f"[port-console] audit-pre-ui: {e}", file=sys.stderr)
+            return 500, error_body("audit_write_failed", "操作未能执行，审计记录写入失败")
 
         # 1.2 审计成对收口：枚举窗口是 Win32 边界，started 已落盘——异常必须补
         # finished 再返回，杜绝 started 悬空。
@@ -1605,7 +1707,8 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         except ScanError as e:
             write_audit_finished(state, "ui", "wm_close", port, target_label, client_id,
                                  "failed", [], [], "scan_failed")
-            return 500, error_body("scan_failed", f"关闭后复核扫描失败: {e}")
+            print(f"[port-console] wm_close-rescan: {e}", file=sys.stderr)
+            return 500, error_body("scan_failed", "关窗后复核失败，请重新查询端口状态确认")
         still = remaining_on_port(rescan, port)
         if not tree_alive and not still:
             killed = [tree_member_entry(p, scan["processes"], started_map, target)
@@ -1652,7 +1755,8 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
             "target": target_label, "client_id": client_id, "action": "started",
         })
     except OSError as e:
-        return 500, error_body("audit_write_failed", f"审计前置事件写盘失败: {e}")
+        print(f"[port-console] audit-pre-agent: {e}", file=sys.stderr)
+        return 500, error_body("audit_write_failed", "操作未能执行，审计记录写入失败")
 
     # ★ B1（T-PORT-003）杀前实时复核：快照比对只能发现"扫描前"的易主，
     #   发现不了"扫描后（含审计 os.fsync 的窗口）"的 PID 复用。此处用【此刻】的
@@ -1675,7 +1779,8 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
         except ScanError as e:
             write_audit_finished(state, channel, "taskkill_tree", port, target_label,
                                  client_id, "failed", [], [], "scan_failed")
-            return 500, error_body("scan_failed", f"杀前复核扫描失败: {e}")
+            print(f"[port-console] prekill-rescan: {e}", file=sys.stderr)
+            return 500, error_body("scan_failed", "杀前复核失败，操作已中止")
         still = remaining_on_port(recheck, port)
         if not still:
             # 目标已退且端口已空：意图已达成（非己力）。审计 result 用 "already_free"
@@ -1715,7 +1820,8 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
     except ScanError as e:
         write_audit_finished(state, channel, "taskkill_tree", port, target_label, client_id,
                              "failed", [], [], "scan_failed")
-        return 500, error_body("scan_failed", f"强杀后验证扫描失败: {e}")
+        print(f"[port-console] postkill-rescan: {e}", file=sys.stderr)
+        return 500, error_body("scan_failed", "强杀结果验证失败，请重新查询确认")
     still = remaining_on_port(final_scan, port)
     exited = [p for p in tree_pids if p not in set(alive)]
     # S2（T-PORT-003）：killed 填每个成员的真实 proc/started（原实现全填根进程的值，
@@ -1730,7 +1836,8 @@ def close_target(state, *, channel: str, mode: str, clean: dict, client_id: str)
     if target["pid"] in alive:
         write_audit_finished(state, channel, "taskkill_tree", port, target_label, client_id,
                              "failed", killed, still, "command_failed")
-        body = error_body("command_failed", f"强杀未生效: {err or '根进程仍存活'}")
+        print(f"[port-console] taskkill: {err or '根进程仍存活'}", file=sys.stderr)
+        body = error_body("command_failed", "强杀未生效：可能权限不足（需以管理员身份运行），或目标正在被系统占用")
         body["remaining"] = still
         return 500, body
     write_audit_finished(state, channel, "taskkill_tree", port, target_label, client_id,
@@ -1786,7 +1893,8 @@ def rename_port(state, body: dict, client_id: str) -> tuple:
     try:
         scan = scan_or_error()
     except ScanError as e:
-        return 500, error_body("scan_failed", f"扫描失败: {e}")
+        print(f"[port-console] rename-scan: {e}", file=sys.stderr)
+        return 500, error_body("scan_failed", "扫描失败，无法完成操作，请稍后重试")
 
     current = None
     for e in owner_groups(scan, port):
@@ -1810,7 +1918,8 @@ def rename_port(state, body: dict, client_id: str) -> tuple:
                 state.port_map[str(port)] = old_entry
             else:
                 state.port_map.pop(str(port), None)
-            return 500, error_body("internal_error", f"映射写盘失败: {e}")
+            print(f"[port-console] port_map-write: {e}", file=sys.stderr)
+            return 500, error_body("internal_error", "命名保存失败，请稍后重试")
 
     item = {"port": port, "name": name, "level": level, "source": "manual",
             "proc": fingerprint["proc"], "started": fingerprint["started"]}
@@ -1843,7 +1952,8 @@ def protect_port(state, body: dict, client_id: str) -> tuple:
                               {"ports": sorted(state.dynamic_protected)})
         except OSError as e:
             state.dynamic_protected.discard(port)
-            return 500, error_body("internal_error", f"保护表写盘失败: {e}")
+            print(f"[port-console] protect-write: {e}", file=sys.stderr)
+            return 500, error_body("internal_error", "保护设置保存失败，请稍后重试")
     try:  # 保护已生效，审计失败只记日志不回滚（次级故障不推翻主操作）
         write_audit_event(state, {"ts": now_iso(), "channel": "ui", "port": port,
                                   "client_id": client_id, "action": "protect"})
@@ -1868,7 +1978,8 @@ def unprotect_port(state, body: dict, client_id: str) -> tuple:
                               {"ports": sorted(state.dynamic_protected)})
         except OSError as e:
             state.dynamic_protected.add(port)
-            return 500, error_body("internal_error", f"保护表写盘失败: {e}")
+            print(f"[port-console] unprotect-write: {e}", file=sys.stderr)
+            return 500, error_body("internal_error", "解除保护保存失败，请稍后重试")
     try:
         write_audit_event(state, {"ts": now_iso(), "channel": "ui", "port": port,
                                   "client_id": client_id, "action": "unprotect"})
@@ -1883,8 +1994,14 @@ def unprotect_port(state, body: dict, client_id: str) -> tuple:
 
 
 class ConsoleHandler(BaseHTTPRequestHandler):
-    server_version = "PortConsole/1.0"
+    server_version = SERVER_VERSION
+    sys_version = ""              # 1.3 项②：不外露 Python 解释器版本
     protocol_version = "HTTP/1.1"
+
+    def version_string(self) -> str:
+        # 默认实现拼 'server_version + 空格 + sys_version'；置空 sys_version 仍带尾
+        # 空格，覆写保证响应头恰好为产品版本。
+        return SERVER_VERSION
 
     # ---- 基础响应 ----
 
@@ -1895,6 +2012,9 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        # 1.3 R2：每个 JSON 应答都盖章"我是哪个实例"。客户端发现端口后若端口被顶，
+        # 第二个请求拿到的实例号会变——宁可报"端口易主"，也不把别家结果当本包。
+        self.send_header("X-Port-Console-Instance", self._state().instance_id)
         self.end_headers()
         self.wfile.write(payload)
 
@@ -1943,7 +2063,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         try:
             body = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as e:
-            return 400, "invalid_request", f"请求体不是合法 JSON: {e}", None
+            print(f"[port-console] body-parse: {e}", file=sys.stderr)
+            return 400, "invalid_request", "请求体不是合法 JSON", None
         if not isinstance(body, dict):
             return 400, "invalid_request", "请求体必须是 JSON 对象", None
         return 0, "", "", body
@@ -1989,8 +2110,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("X-Port-Console-Instance", state.instance_id)
             body = json.dumps({"ok": True, "uptime": uptime_seconds(state),
-                               "port": self._actual_port(), "api_version": API_VERSION}).encode("utf-8")
+                               "port": self._actual_port(), "api_version": API_VERSION,
+                               "instance_id": state.instance_id}).encode("utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -2073,7 +2196,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         try:
             listening = scan_listen_ports()
         except ScanError as e:
-            self._send_json(500, error_body("scan_failed", f"扫描失败: {e}"))
+            print(f"[port-console] protection-scan: {e}", file=sys.stderr)
+            self._send_json(500, error_body("scan_failed", "扫描失败，无法完成操作，请稍后重试"))
             return
         active = sorted(p for p in state.protection["ports"] if p in listening)
         history = sorted(p for p in state.protection["ports"] if p not in listening)
@@ -2105,7 +2229,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         try:
             scan = scan_or_error_cached(state, force_fresh=force_fresh)
         except ScanError as e:
-            self._send_json(500, error_body("scan_failed", f"扫描失败: {e}"))
+            print(f"[port-console] ports-scan: {e}", file=sys.stderr)
+            self._send_json(500, error_body("scan_failed", "扫描失败，无法完成操作，请稍后重试"))
             return
         items = build_full_entries(state, scan, record_unknowns=same_origin)
         if not same_origin:
@@ -2149,7 +2274,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             try:
                 scan = scan_or_error()
             except ScanError as e:
-                self._send_json(500, error_body("scan_failed", f"扫描失败: {e}"))
+                print("[port-console] agent-ports-scan: " + str(e), file=sys.stderr)
+                self._send_json(500, error_body("scan_failed", "扫描失败，无法完成操作，请稍后重试"))
                 return
             # 1.2 改-2：unknown 台账只由带 token 的请求记账（匿名纯只读，不写盘）
             full = build_full_entries(state, scan, record_unknowns=authenticated)
@@ -2234,7 +2360,12 @@ def acquire_instance_lock(base_dir: Path):
 
 
 def runtime_status(base_dir: Path) -> tuple:
-    """返回 (runtime 存在, pid 存活, health 可达, base_url 或 None)。"""
+    """返回 (runtime 存在, pid 存活, 健康且是本实例, base_url 或 None)。
+
+    1.3 R2：第三个返回值从"端口上有人应答"收紧成"应答的是写这份 runtime.json 的
+    那个实例"。旧实现把 3999 上任何 200 都算健康——handle_existing_instance 会打印
+    "已有实例在运行"并 exit 0，而真正的控制台根本没起（用户看到一行提示就以为好了）。
+    """
     rt = base_dir / "runtime.json"
     if not rt.exists():
         return False, False, False, None
@@ -2242,10 +2373,15 @@ def runtime_status(base_dir: Path) -> tuple:
         data = read_json_file(rt)
     except Exception:
         return True, False, False, None
+    if not isinstance(data, dict):
+        return True, False, False, None
     pid = data.get("pid")
-    pid_ok = isinstance(pid, int) and pid > 0 and pid_alive(int(pid))
-    port = _extract_loopback_port(data.get("base_url", ""))
-    health = _health_probe(port) if port else False
+    pid_ok = (isinstance(pid, int) and not isinstance(pid, bool)
+              and pid > 0 and pid_alive(int(pid)))
+    port = _extract_loopback_port(str(data.get("base_url") or ""))
+    ident = _health_identity(port) if port else None
+    recorded = str(data.get("instance_id") or "")
+    health = bool(ident) and (not recorded or ident.get("instance_id") == recorded)
     return True, pid_ok, health, (data.get("base_url") if port else None)
 
 
@@ -2289,19 +2425,80 @@ def clear_stale_runtime(base_dir: Path) -> None:
         pass
 
 
-def find_available_port() -> int:
-    """§9.1：从 3999 起；仅占用才顺延，其他错误直接失败。"""
-    for p in range(DEFAULT_PORT, DEFAULT_PORT + PORT_SCAN_RANGE):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+def cleanup_orphan_tmp(base_dir: Path) -> int:
+    """1.3.1：启动早期清掉 pcon-*.tmp 孤儿。
+
+    只按「pcon- 前缀 + .tmp 后缀」判，不按大小判——0 B 是常态，但中断残件可能带内容。
+    名字空间与真件不相交（runtime.json / rules.json / api_token.txt / instance.lock 等），
+    且只在拿到 instance.lock 之后、任何启动写操作之前调用，不碰正在写、尚未
+    os.replace 的临时件。删不掉（被占）就保留并告警，不阻断启动。
+    """
+    removed = 0
+    for p in base_dir.glob("pcon-*.tmp"):
         try:
-            s.bind(("127.0.0.1", p))
-            return p
+            if p.is_file():
+                p.unlink(missing_ok=True)
+                removed += 1
+        except OSError:
+            print(f"[port-console] 临时件清理失败，保留：{p.name}", file=sys.stderr)
+    if removed:
+        print(f"[port-console] 已清理 {removed} 个 pcon-*.tmp 临时件")
+    return removed
+
+
+class ConsoleServer(ThreadingHTTPServer):
+    """1.3 R2（审核返工 A-2）：把「地址复用」显式钉死为关。
+
+    ThreadingHTTPServer 对 allow_reuse_address 的默认是"没写"不是"不许"——在
+    Windows 上谁要是按 Unix 习惯在子类里打开它（绕 TIME_WAIT），语义立刻翻转成
+    "允许绑已被占用的端口"：探测明明顺延了，服务却和占位者绑同一个口并存。
+    在这里落成明文类属性，四象限里 reuse=1/reuse=1 的"同口并存"结构上不可能。
+    """
+
+    allow_reuse_address = False
+
+
+def bind_console_server():
+    """§9.1 ＋ 1.3 R2：绑定与 listen 在同一步完成，被占即顺延，返回 (server, port)。
+
+    旧实现 find_available_port() 用裸 socket 试绑后立刻 close，真正的 bind 在 main
+    里更晚：中间被抢就抛未捕获 OSError 带栈退出，而 runtime.json 已经写成别人的端口。
+    现在：① 先探（**探测 socket 不设任何端口复用选项**）；② 直接构造
+    ThreadingHTTPServer（构造时自己 bind＋listen），失败就下一个号；
+    ③ 只有 100 个号全被真监听占用才失败——此时 runtime.json 一个字节都不写。
+
+    为什么探测侧不能留「地址复用」选项：Windows 语义与 BSD 相反，它是"允许绑**已被
+    占用**的端口"，不是"复用 TIME_WAIT"。加上它以后探测恒成功 → find 一路返回 3999
+    → 服务也绑 3999，与占位者并存，顺延机制被这一行直接废掉（症状是"看着正常、
+    两个进程抢一个口"）。TIME_WAIT 造成的漂号**不在这里治**：漂一个号无害，顺延兜得住。
+
+    残余风险（审核返工 A-2 已关）：服务端此前沿用 ThreadingHTTPServer 的默认，
+    「复用地址」是"没写明文"而非"明文不许"——谁在子类里顺手打开（Unix 上绕
+    TIME_WAIT 的习惯写法），Windows 语义就翻转成"允许绑已被占用的端口"，同口
+    并存、顺延被废。现在 ConsoleServer 把 allow_reuse_address = False 钉成
+    明文类属性，四象限里 reuse=1/reuse=1 的"同口并存"在结构上不可能出现。
+    §6.3 #3 的「netstat 同一端口只能有一个 PID」由"必须做"降为"复核做"：
+    结构上已不可能并存，真机看一眼 netstat 即可，不必以它为放行条件。
+    """
+    for p in range(DEFAULT_PORT, DEFAULT_PORT + PORT_SCAN_RANGE):
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            probe.bind(("127.0.0.1", p))
         except OSError as e:
             if getattr(e, "winerror", None) == 10048 or e.errno == errno.EADDRINUSE:
                 continue
             raise
         finally:
-            s.close()
+            probe.close()
+        try:
+            server = ConsoleServer(("127.0.0.1", p), ConsoleHandler)
+        except OSError as e:
+            if getattr(e, "winerror", None) == 10048 or e.errno == errno.EADDRINUSE:
+                continue          # 探完到 bind 之间被抢：顺延，绝不带栈退出
+            raise
+        server.daemon_threads = True
+        server.actual_port = p
+        return server, p
     raise RuntimeError(f"{DEFAULT_PORT} 起连续 {PORT_SCAN_RANGE} 个端口均被占用")
 
 
@@ -2333,13 +2530,20 @@ def ensure_token_file(base_dir: Path) -> tuple:
     return raw, True
 
 
-def write_runtime_info(base_dir: Path, port: int) -> None:
-    atomic_write_json(base_dir / "runtime.json", {
+def write_runtime_info(base_dir: Path, port: int, instance_id: str = "") -> None:
+    """1.3 R2：只在 listen 成功之后调用；多写一个 instance_id 供客户端认人。
+
+    instance_id 缺省为空（旧调用形态不写该键），新流程一律传入 state.instance_id。
+    """
+    data = {
         "base_url": "http://127.0.0.1:" + str(int(port)),
         "pid": os.getpid(),
         "started_at": now_iso(),
         "api_version": API_VERSION,
-    })
+    }
+    if instance_id:
+        data["instance_id"] = instance_id
+    atomic_write_json(base_dir / "runtime.json", data)
 
 
 def cleanup_runtime(base_dir: Path) -> None:
@@ -2370,39 +2574,39 @@ def main() -> None:
         # S5（T-PORT-003）：二次取锁成功则持锁返回并继续启动；失败/已有实例则内部退出
         handle_existing_instance(BASE_DIR)
     clear_stale_runtime(BASE_DIR)
+    cleanup_orphan_tmp(BASE_DIR)   # 1.3.1：早于首个启动写盘（ensure_token_file）
+
+    token, token_ok = ensure_token_file(BASE_DIR)
 
     try:
-        port = find_available_port()
+        # 1.3 R2：绑定＋listen 在同一个动作里完成，失败即顺延下一个号。
+        # 旧顺序是"裸 socket 试绑→close→写 runtime.json→再 bind"：中间任何一刻被抢走
+        # 都会抛未捕获 OSError 带栈退出，而 runtime.json 已经写成别人的端口。
+        server, port = bind_console_server()
     except (OSError, RuntimeError) as e:
         print(f"[port-console] 端口选择失败: {e}", file=sys.stderr)
         sys.exit(1)
-
-    token, token_ok = ensure_token_file(BASE_DIR)
 
     state = AppState(BASE_DIR, configs, port, token, token_ok)
     if not token_ok:
         print("[port-console] ⚠ L2 程序化关闭已关闭（token 文件问题），L0/L1 不受影响", file=sys.stderr)
 
-    write_runtime_info(BASE_DIR, port)
-
-    server = ThreadingHTTPServer(("127.0.0.1", port), ConsoleHandler)
-    server.daemon_threads = True
     server.app_state = state
-    server.actual_port = port
+    # 落盘一定在 listen 之后：文件存在的每一刻，该端口都真的在收连接。
+    write_runtime_info(BASE_DIR, port, state.instance_id)
 
     base_url = "http://127.0.0.1:" + str(int(port))
-    print(f"[port-console] 端口控制台已启动: {base_url}/")
-    print(f"[port-console] L2 token 文件: {BASE_DIR / 'api_token.txt'}（仅本机 AI 部署读取，请勿分享）")
-    print("[port-console] 退出：在本窗口按 Ctrl+C，或直接关闭本窗口。")
-    # T-PORT-005 验收配套（偏离申报项）：PORT_CONSOLE_NO_BROWSER=1 抑制自动开页面——
-    # acceptance 起服务时浏览器轮询会与服务端展示缓存抢状态，V58 断言不可控。
     try:
-        if os.environ.get("PORT_CONSOLE_NO_BROWSER") != "1":
-            webbrowser.open(base_url)
-    except Exception:
-        print("[port-console] 自动打开浏览器失败，请手动访问上面的地址。", file=sys.stderr)
-
-    try:
+        print(f"[port-console] 端口控制台已启动: {base_url}/")
+        print(f"[port-console] L2 token 文件: {BASE_DIR / 'api_token.txt'}（仅本机 AI 部署读取，请勿分享）")
+        print("[port-console] 退出：在本窗口按 Ctrl+C，或直接关闭本窗口。")
+        # T-PORT-005 验收配套（偏离申报项）：PORT_CONSOLE_NO_BROWSER=1 抑制自动开页面——
+        # acceptance 起服务时浏览器轮询会与服务端展示缓存抢状态，V58 断言不可控。
+        try:
+            if os.environ.get("PORT_CONSOLE_NO_BROWSER") != "1":
+                webbrowser.open(base_url)
+        except Exception:
+            print("[port-console] 自动打开浏览器失败，请手动访问上面的地址。", file=sys.stderr)
         server.serve_forever()
     except KeyboardInterrupt:
         pass

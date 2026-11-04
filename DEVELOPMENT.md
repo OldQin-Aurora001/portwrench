@@ -129,7 +129,7 @@ AI 没有眼睛。它只知道「你说 3000 端口被占了」，不知道**是
 
 **不靠「记得」，靠「跑不过就红」。**
 
-这个项目最后有 103 个单元测试 + 21 步端到端验收。其中有几条是专门为了防「将来有人手滑」写的：
+这个项目最后有 151 个单元测试 + 21 步端到端验收。其中有几条是专门为了防「将来有人手滑」写的：
 
 - **缓存不许进杀路径** —— 断言杀进程时拿到的必须是新鲜扫描，带缓存标记的扫描直接抛异常
 - **建树时必须剔除已退出的成员** —— 断言树里不含已经死掉的进程
@@ -172,11 +172,11 @@ AI 没有眼睛。它只知道「你说 3000 端口被占了」，不知道**是
 
 ```bash
 # 单元测试
-python -m unittest discover -s tests
+python -B -m unittest discover -s tests
 
 # 端到端验收（需要先起服务）
 PORT_CONSOLE_NO_BROWSER=1 python port_console.py     # 另开一个终端
-PORT_CONSOLE_NO_BROWSER=1 python tests/acceptance_api.py
+PORT_CONSOLE_NO_BROWSER=1 python -B tests/acceptance_api.py
 ```
 
 **`PORT_CONSOLE_NO_BROWSER=1` 是给自动化用的**，不是给人用的——它会阻止启动时自动打开浏览器，避免浏览器轮询抢走缓存、干扰缓存断言。**人手动使用时不要加。**
@@ -193,4 +193,4 @@ PORT_CONSOLE_NO_BROWSER=1 python tests/acceptance_api.py
 
 ---
 
-*PortWrench 端口扳手 · 1.1.1 · 2026-11*
+*PortWrench 端口扳手 · 1.3.1 · 2026-11*
