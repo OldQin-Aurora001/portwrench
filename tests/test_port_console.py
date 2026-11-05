@@ -2196,15 +2196,38 @@ class Test77SystemRuleProcOnly(unittest.TestCase):
     def test_77c_real_system_processes_still_protected(self):
         # 反向验（工单改-4）：真 System（PID 4，cmdline 为空）、svchost、lsass
         # 仍必须 system 级——别为了放开把真系统进程也放了
+        # 1.4 B-04：svchost 改「名字全等＋exe 落 SystemRoot\System32|SysWOW64」；
+        # 同条锁冒名/近似名/非系统目录不得 system（负例）
         st = self._state()
-        for name, cmdline in (("System", ""),
-                              ("svchost.exe", "svchost.exe -k netsvcs"),
-                              ("lsass.exe", r"C:\Windows\system32\lsass.exe")):
-            cls = pc.classify_entry(st, {
-                "port": 45012, "addr": "0.0.0.0", "pid": 4,
-                "proc": name, "exe": "", "cmdline": cmdline,
-                "started": "s", "session_id": 0})
-            self.assertEqual(cls["level"], "system", f"{name} 必须仍是系统级")
+        cases = (
+            ("System", "", 4, 0, "", "system"),
+            ("svchost.exe", "svchost.exe -k netsvcs", 4242, 1,
+             r"C:\Windows\System32\svchost.exe", "system"),
+            ("svchost.exe", "svchost.exe -k netsvcs", 4242, 1,
+             "C:/Windows/System32/svchost.exe", "system"),
+            ("svchost.exe", "svchost.exe -k netsvcs", 4242, 1,
+             r"\\?\C:\Windows\System32\svchost.exe", "system"),
+            ("svchost.exe", "svchost.exe -k netsvcs", 4242, 1,
+             r"C:\Windows\SysWOW64\svchost.exe", "system"),
+            ("lsass.exe", r"C:\Windows\system32\lsass.exe", 4242, 1,
+             r"C:\Windows\System32\lsass.exe", "system"),
+            ("mysvchost.exe", "mysvchost.exe", 4242, 1,
+             r"C:\Tools\mysvchost.exe", "unknown"),
+            ("svchostx.exe", "svchostx.exe", 4242, 1,
+             r"C:\Tools\svchostx.exe", "unknown"),
+            ("svchost.exe", "svchost.exe -k netsvcs", 4242, 1,
+             r"C:\Tools\svchost.exe", "unknown"),
+            ("svchost.exe", "svchost.exe -k netsvcs", 4242, 1,
+             r"C:\Windows\System32evil\svchost.exe", "unknown"),
+        )
+        for name, cmdline, pid, session, exe, want in cases:
+            with self.subTest(proc=name, exe=exe or "<空>"):
+                cls = pc.classify_entry(st, {
+                    "port": 45012, "addr": "0.0.0.0", "pid": pid,
+                    "proc": name, "exe": exe, "cmdline": cmdline,
+                    "started": "s", "session_id": session})
+                self.assertEqual(cls["level"], want, f"{name} @ {exe or '<空>'} 期望 {want}")
+                self.assertEqual(cls["source"], "auto" if want == "system" else "unknown")
 
 
 class Test78AiPromptFlagKillable(ServerCase):
@@ -2590,7 +2613,12 @@ class Test82StderrDecoding(unittest.TestCase):
         self.assertNotIn("_x000", msg)
         self.assertIn("Bogus", msg)  # ASCII 类名任何 locale 都应在
         if ctypes.windll.kernel32.GetACP() == 936:
-            self.assertIn("无效类", msg)  # 中文机必须是可读中文
+            # 中文机必须是可读中文；0x80041010 的措辞随 Windows 版本漂：
+            #   旧版"无效类"，25H2 起"指定的类不存在"——任一即认，锚码不锚方言
+            self.assertTrue(
+                ("无效类" in msg) or ("指定的类不存在" in msg) or ("0x80041010" in msg),
+                f"CIM 失败输出应为可读中文（含已知措辞或错误码），实际：{msg!r}",
+            )
 
 
 class Test83ServerVersionHeader(ServerCase):
@@ -2599,11 +2627,11 @@ class Test83ServerVersionHeader(ServerCase):
     def test_83_health_server_header_is_1_3(self):
         st, head, _ = http_req_raw("GET", "/api/v1/health")
         self.assertEqual(st, 200)
-        self.assertIn("server: portconsole/1.3.1", head.lower())
+        self.assertIn("server: portconsole/1.4.0", head.lower())
         self.assertNotIn("python/", head.lower())  # 加分项：解释器版本不外泄
 
     def test_83b_constant_locked(self):
-        self.assertEqual(pc.SERVER_VERSION, "PortConsole/1.3.1")
+        self.assertEqual(pc.SERVER_VERSION, "PortConsole/1.4.0")
 
     def test_83c_header_exact_no_trailing_space(self):
         """1.3 返工：锁住「响应头恰好等于常量」。
@@ -2613,8 +2641,8 @@ class Test83ServerVersionHeader(ServerCase):
         self.assertEqual(st, 200)
         for line in head.split("\n"):
             if line.lower().startswith("server:"):
-                self.assertEqual(line.split(":", 1)[1].strip(), "PortConsole/1.3.1")
-                self.assertEqual(line.rstrip("\r"), "Server: PortConsole/1.3.1")
+                self.assertEqual(line.split(":", 1)[1].strip(), "PortConsole/1.4.0")
+                self.assertEqual(line.rstrip("\r"), "Server: PortConsole/1.4.0")
                 break
         else:
             self.fail("响应头里没有 Server 行")
@@ -3119,31 +3147,67 @@ class Test87DocsDiscovery(unittest.TestCase):
         readme = (_PKG / "README.md").read_text(encoding="utf-8")
         usage = (_PKG / "使用说明.md").read_text(encoding="utf-8")
         skill = (_PKG / "SKILL.md").read_text(encoding="utf-8")
+        readme_en = (_PKG / "README.en.md").read_text(encoding="utf-8")   # B-02
         for txt in (readme, usage, skill):
             self.assertIn("有界发现", txt)
         self.assertNotIn("禁止遍历端口扫描", readme)
         self.assertNotIn("禁止遍历端口扫描", usage)
         self.assertNotIn("先试 `http://127.0.0.1:3999/api/v1/health`", skill)
+        self.assertIn("bounded discovery", readme_en)   # B-02：英文单独断言
+
+        # 借位对象＝test_87a｜语义最近＝同属 §6.1「地址发现」文档口径（87a 已读三份中文文档）｜
+        # 连锁＝新增 test_ 会打破两轨各 6 处「单测 159」文案链（H-03 测试数恒 159）。
+        def section(txt, head_re):
+            m = re.search(head_re, txt)
+            self.assertIsNotNone(m, head_re)
+            rest = txt[m.end():]
+            n = re.search("(?m)^#{2,4} ", rest)
+            return rest[:n.start()] if n else rest
+
+        def between(txt, a, b):
+            self.assertIn(a, txt)
+            self.assertIn(b, txt)
+            return txt[txt.index(a):txt.index(b)]
+
+        readme_seg = section(readme, r"(?m)^#{2,4} 6\.1 地址发现")
+        self.assertIn("不猜", readme_seg)
+        self.assertIn("runtime.json", readme_seg)
+        en_seg = section(readme_en, r"(?m)^#{2,4} 6\.1 Address discovery")
+        self.assertRegex(en_seg, "refuse")
+        self.assertIn("runtime.json", en_seg)
+        usage_seg = section(usage, r"(?m)^#{2,4} 3\.1 地址发现")
+        self.assertIn("不猜", usage_seg)
+        self.assertIn("runtime.json", usage_seg)
+        zh_rule = between(skill, "2. **禁扫端口找服务**", "3. **403 不要再试**")
+        self.assertIn("不猜", zh_rule)
+        self.assertIn("runtime.json", zh_rule)
+        en_rule = between(skill, "2. **Never scan ports to find the service yourself.**",
+                          "3. **On 403, stop.**")
+        self.assertRegex(en_rule, "refuse")
+        self.assertIn("runtime.json", en_rule)
 
     def test_87b_http_examples_do_not_hardcode_port(self):
         usage = (_PKG / "使用说明.md").read_text(encoding="utf-8")
         self.assertNotIn("127.0.0.1:3999/api/v1/agent", usage)
         self.assertIn("<BASE>", usage)
+        # B-03：英文只加半条——README.en 的 <BASE> 为 0 次，不加存在性断言。
+        self.assertNotIn("127.0.0.1:3999/api",
+                         (_PKG / "README.en.md").read_text(encoding="utf-8"))
 
     def test_87c_skill_english_rule_synced(self):
         skill = (_PKG / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Never scan ports to find the service yourself", skill)
 
     def test_87d_doc_test_counts_match_reality(self):
-        """红门 C-2（1.3 R2 修改单）：md 里的「N 单测」总数必须等于测试函数（def 开头的 test_）实际个数。
+        """红门 C-2（1.3 R2 修改单；1.4 口径反转）：md 里「N 单测」必须等于测试函数个数。
 
-        历史值白名单（79/88/103/126/127）只在 CHANGELOG 的历史版本段放行
-        （第一个带版本号的「## 数字」标题行之后才算历史段）；其余任何 md
-        写错总数即红。英文口径（N unit tests）一并把守。
+        1.4 只查「当前段」：CHANGELOG.md 里第一个「## 数字」版本标题到第二个版本标题
+        之间算当前段；第二个版本标题起一律不查（历史段不按值放行、不比较）；文件头
+        （第一个标题之前）不查。CHANGELOG.md 之外的 md 没有版本段，整份照查。
+        英文口径（N unit tests）一并把守。
         """
         src = Path(__file__).read_text(encoding="utf-8")
         actual = len(re.findall("def " + "test_" + r"\w+", src))
-        historical = {"79", "88", "103", "126", "127"}
         pats = (
             re.compile("(" + "\d+" + ")\s*[项个]?\s*单测"),
             re.compile("单测\s*(\d+)\s*(?:个|项|→|＋)"),
@@ -3152,15 +3216,16 @@ class Test87DocsDiscovery(unittest.TestCase):
         mds = sorted(_PKG.glob("*.md")) + sorted((_PKG / "packages").rglob("*.md"))
         for md in mds:
             txt = md.read_text(encoding="utf-8")
-            m = re.search("(?m)^## " + r"\[\d", txt)
-            hist_from = m.start() if m else None
+            cur_from, cur_to = 0, len(txt)
+            if md.name == "CHANGELOG.md":
+                heads = [h.start() for h in re.finditer("(?m)^## " + r"\[\d", txt)]
+                if heads:
+                    cur_from = heads[0]
+                    cur_to = heads[1] if len(heads) > 1 else len(txt)
             for pat in pats:
-                for mm in pat.finditer(txt):
+                for mm in pat.finditer(txt, cur_from, cur_to):
                     num = mm.group(1)
                     if num == str(actual):
-                        continue
-                    if (num in historical and md.name == "CHANGELOG.md"
-                            and hist_from is not None and mm.start() >= hist_from):
                         continue
                     line_no = txt[:mm.start()].count("\n") + 1
                     self.fail(f"{md.relative_to(_PKG).as_posix()}:{line_no} "

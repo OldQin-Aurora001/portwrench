@@ -1,6 +1,6 @@
 ---
 name: portwrench
-version: "1.3.1"
+version: "1.4.0"
 author: PortWrench Team
 license: MIT
 metadata:
@@ -29,6 +29,8 @@ description: "Use when 查本机哪个端口被谁占了、关掉关了黑框还
    并用实例号确认是本包实例）；手动排障先读本包 `runtime.json` 的 `base_url`
    （写在监听成功之后）；**别自己写循环扫区间**，也别把「3999 不通」当成
    「服务没起」——被占会顺延（3999–4098）。
+   没有 `runtime.json`／已陈旧、且区间内同时有多个控制台在跑时，`portctl.py`
+   **拒绝执行（不猜）**——关掉不用的实例，或删掉陈旧 `runtime.json` 后重试。
 3. **403 不要再试**——受保护目标（保护端口/Session 0/System32 宿主/信息读不到
    fail closed/用户在面板上手动保护的目标），工具拒杀是设计不是故障；
 4. **只有 `ok:true 且 remaining=[]` 才算关干净**；
@@ -104,6 +106,9 @@ py -3 -B tests\acceptance_api.py --base-url <BASE> --token-file api_token.txt   
    bounded discovery over 3999–4098 (verifying `ok:true + api_version:"v1" + port`)
    plus an instance id proving it is *this* package's console; otherwise read
    `base_url` from `runtime.json` in this package (written only after listen succeeds);
+   with no `runtime.json` (or a stale one) and several consoles in the range, `portctl.py`
+   refuses to run rather than guess — close the unused instance, or delete the stale
+   `runtime.json` and retry.
 3. **On 403, stop.** The target is protected (protected ports / Session 0 /
    System32 hosts / unreadable info → fail-closed / user-protected via the panel).
    Refusal is by design;

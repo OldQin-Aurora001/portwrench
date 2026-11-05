@@ -323,6 +323,9 @@ Any local script can forge same-origin headers and call `/api/v1/ui/*`—therefo
 1. Read the `base_url` in `runtime.json` in this directory first (it contains no token; it is written only after listen succeeds, so the port in it always accepts connections);
 2. If it is missing or stale (pid gone), run `python portctl.py health` — it has **bounded discovery** over 3999–4098, verifying `ok:true + api_version:"v1" + port` plus an `instance_id` that proves it is *this* package's console; multiple instances are reported, not guessed;
 3. **Never write your own loop over the range** (AI or human): use `portctl.py` or the HTTP rules above. "3999 is closed" does not mean "the service is down" — the console shifts when the port is taken; the real port is in `runtime.json`.
+4. With no `runtime.json` (or a stale one) and several consoles running in the range,
+   `portctl.py` **refuses to run rather than guess** — close the unused instance, or delete
+   the stale `runtime.json` and retry.
 
 ### 6.2 Read-only queries (L0, no token)
 
@@ -411,6 +414,7 @@ The phase-two "pure ctypes rewrite" is unrelated to this metric; use "2.0 / ctyp
 - **Tests**: run unit tests with `python -m unittest discover -s tests -v`;  
   after starting the service, run automated acceptance tests with `python tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt`  
   (the script creates its own test processes and does not touch real services).
+- Antivirus false-positive notice: `tests\test_port_console.py` contains decoy "masqueraded system process path" data used by the tests (fake svchost.exe paths outside the system directory — PortWrench must recognize and refuse such masquerades, and these entries exist to verify exactly that). Some antivirus products may flag this file statically (historical confirmed case: Huorong Trojan/Python.ShellLoader.ad, against test files prior to this release). This does not affect any product feature: `tests\` is used by unit tests only and is not used at runtime. If flagged, add the file to the trust list or ignore it; this release rewrites that test data, and the full 159-test suite passes on Python 3.12 with Huorong enabled, with zero file loss. Other antivirus products have not been verified one by one. Skipping unit tests avoids the issue entirely.
 
 ## Directory structure (release build)
 
@@ -421,8 +425,8 @@ index.html                 # single-page frontend (no external resources)
 rules.json                 # automatic recognition rules
 protection.json            # protection list (ports + process names)
 ports.json / ports.md      # port knowledge base
-port_map.json              # manual rename mapping (stored by port)
-unknown.json               # record of unrecognized entries
+port_map.json              # manual rename mapping (stored by port; generated at runtime, not shipped)
+unknown.json               # record of unrecognized entries (generated at runtime, not shipped)
 SKILL.md                   # operating instructions for AI shells
 启动端口控制台.bat          # double-click to launch
 README.md                  # Chinese original

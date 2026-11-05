@@ -320,6 +320,8 @@ UI 通道的「同源证据」（Origin / Sec-Fetch-Site）只防**浏览器侧*
    —— 它内置**有界发现**：3999–4098 逐个验身份；
 3. **别自己写循环扫区间**（AI/人都不写）：只准用 `portctl.py` 或本条 HTTP 口径。
    「3999 不通」不等于「服务没起」——被占会自动顺延，真实端口在 runtime.json 里。
+4. 没有 `runtime.json`／已陈旧、且区间内同时有多个控制台在跑时，`portctl.py`
+   **拒绝执行（不猜）**——关掉不用的实例，或删掉陈旧 `runtime.json` 后重试。
 
 ### 6.2 只读查询（L0，无 token）
 
@@ -411,6 +413,7 @@ Agent 请求建议带 `X-Port-Console-Client`（任意短标识，如 `zcode`、
 - **测试**：`python -m unittest discover -s tests -v` 跑单元测试；  
   服务启动后 `python tests\acceptance_api.py --base-url http://127.0.0.1:3999 --token-file api_token.txt`  
   跑自动验收（只用脚本自建的测试进程，不碰你的真实服务）。
+- 杀毒软件误报说明：`tests\test_port_console.py` 含有用于测试的"伪装系统进程路径"数据（冒充 svchost.exe 落在非系统目录——端口扳手必须识别并拒绝这类伪装，这些数据就是用来验证这一点的），部分杀毒软件可能将其静态识别为木马（历史确认案例：火绒 Trojan/Python.ShellLoader.ad，针对本版之前的测试文件）。这不影响产品任何功能：`tests\` 仅单元测试使用，不参与运行。若你的杀毒软件报警，可将该文件加入信任区或忽略；本版已调整该段测试数据，在 Python 3.12、火绒开启的机器上跑通 159 项测试、文件零损失；其余杀软未逐一验证。不运行单元测试则完全无感。
 
 ## 目录结构（发布版）
 
@@ -421,8 +424,8 @@ index.html                 # 前端单页（无外部资源）
 rules.json                 # 自动识别规则
 protection.json            # 保护表（端口 + 进程名）
 ports.json / ports.md      # 端口知识库
-port_map.json              # 手工改名映射（按端口存）
-unknown.json               # 未识别条目留档
+port_map.json              # 手工改名映射（按端口存；运行时生成，不进发布包）
+unknown.json               # 未识别条目留档（运行时生成，不进发布包）
 SKILL.md                   # 给 AI 壳的操作说明书
 启动端口控制台.bat          # 双击启动
 README.md                  # 本文件（中文）

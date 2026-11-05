@@ -50,7 +50,7 @@ from ctypes import wintypes
 BASE_DIR = Path(__file__).resolve().parent
 
 API_VERSION = "v1"
-SERVER_VERSION = "PortConsole/1.3.1"  # 1.3 项②：Server 响应头版本，发布时随版本改
+SERVER_VERSION = "PortConsole/1.4.0"  # 1.4 H-01：Server 响应头随发布版本
 DEFAULT_PORT = 3999
 PORT_SCAN_RANGE = 100          # 3999 起顺延尝试数
 PS_TIMEOUT = 8.0               # §5.1 扫描超时
@@ -868,7 +868,6 @@ def classify_entry(state, entry: dict) -> dict:
     # ⚠ 此改动扩大所有规则的匹配面，全表改前/改后逐条对比由 V75/单测 68 把守。
     text = " ".join(x for x in (cmdline, proc) if x)
     text_low = text.casefold()
-    proc_low = proc.casefold()
     for r in state.rules:                    # 已按 (order, 文件序号) 预排序
         # 1.2 改-4（甲案，复核方 08:0x 拍板）：level=system 的兜底规则只用 proc 名
         # 匹配、不看 cmdline——AI 程序的命令行带 --system-prompt 是家常便饭，拼接
@@ -878,8 +877,14 @@ def classify_entry(state, entry: dict) -> dict:
         # 应用识别规则（self/other）仍走 cmdline+proc 双源（V75/单测 68 口径不变）。
         # 乙案（rules.json 加 match_field 维度）是长期正解，留二期；丙案（改窄
         # match 字面量）会把 PID 4 的真 System（cmdline 为空）漏掉，禁止。
-        hay = proc_low if r["level"] == "system" else text_low
-        if r["match"].casefold() in hay:
+        if r["level"] == "system":
+            # 1.4 B-04：system 规则改「名字全等＋exe 落 System32/SysWOW64」，
+            # 不再子串包含（"svchost" in "mysvchost.exe" 曾让冒名者白拿 system）。
+            if _system_rule_matches(r, proc, exe):
+                matched = r
+                break
+            continue
+        if r["match"].casefold() in text_low:
             matched = r
             break
 
@@ -947,6 +952,26 @@ def _proc_name_matches(rule_name: str, proc: str) -> bool:
     a = rule_name.casefold().removesuffix(".exe")
     b = proc.casefold().removesuffix(".exe")
     return a == b
+
+
+def _system_rule_matches(rule: dict, proc: str, exe: str) -> bool:
+    r"""1.4 B-04：system 兜底规则的精确匹配（名字全等 ＋ exe 落系统目录）。
+
+    名字：proc 去 .exe 后与规则 match 去 .exe 后全等（casefold），替代子串包含；
+    路径：exe 非空时必须是 <SystemRoot>\System32\ 或 <SystemRoot>\SysWOW64\ 前缀
+    （末尾分隔符在判定内，防 System32evil）；先剥 \\?\ 长路径前缀再 normpath。
+    exe 为空（PID 4 真 System，exe 不可读）保留 system，属 fail-closed 口子。"""
+    if not _proc_name_matches(rule["match"], proc):
+        return False
+    if not exe:
+        return True
+    path = exe
+    if path.startswith("\\\\?\\"):
+        path = path[4:]
+    path = os.path.normpath(path).casefold()
+    sysroot = os.path.abspath(os.environ.get("SystemRoot", r"C:\Windows")).casefold()
+    return (path.startswith(sysroot + "\\system32\\")
+            or path.startswith(sysroot + "\\syswow64\\"))
 
 
 def protection_reason(state, entry: dict):
