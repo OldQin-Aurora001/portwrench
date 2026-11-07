@@ -4,6 +4,8 @@
 
 <p align="center"><code>MIT License</code> &nbsp;·&nbsp; <code>Python 3.10+</code> &nbsp;·&nbsp; <code>Windows</code> &nbsp;·&nbsp; <code>零第三方依赖</code> &nbsp;·&nbsp; <code>只绑 127.0.0.1</code></p>
 
+<p align="center">🤖 AI 读者：本项目网站另有机器可读指南 —— <a href="https://c2fnbmhd.qwenwork.host/llms.txt">llms.txt</a>（说明与边界）· <a href="https://c2fnbmhd.qwenwork.host/site.json">site.json</a>（名册与约束），请先读这两个文件</p>
+
 # PortWrench · 端口扳手
 
 > **今天起，只用说一句话，让 AI 帮你操纵端口。**

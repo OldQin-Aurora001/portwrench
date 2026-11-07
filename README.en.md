@@ -4,6 +4,8 @@ English · [中文](README.md)
 
 <p align="center"><code>MIT License</code> &nbsp;·&nbsp; <code>Python 3.10+</code> &nbsp;·&nbsp; <code>Windows only</code> &nbsp;·&nbsp; <code>Zero third-party dependencies</code> &nbsp;·&nbsp; <code>Loopback only (127.0.0.1)</code></p>
 
+<p align="center">🤖 AI readers: this project's website also serves a machine-readable guide at <a href="https://c2fnbmhd.qwenwork.host/llms.txt">llms.txt</a> (boundaries &amp; page list) and <a href="https://c2fnbmhd.qwenwork.host/site.json">site.json</a> (roster &amp; constraints) — read those two first</p>
+
 # PortWrench
 
 This is the English translation of README.md. If there is any inconsistency, the Chinese version prevails.
